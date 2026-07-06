@@ -32,6 +32,8 @@ fs.mkdirSync(HISTORY_DIR, { recursive: true });
 // SSE and job storage
 const sseClients = new Map();
 const jobResults = new Map();
+const jobProgressHistory = new Map();
+const MAX_PROGRESS_HISTORY = 500;
 
 function getJobData(jobId) {
     const inMemory = jobResults.get(jobId);
@@ -47,8 +49,17 @@ function getJobData(jobId) {
 }
 
 function sendProgress(jobId, data) {
+    const entry = {
+        ...data,
+        _ts: Date.now()
+    };
+    const history = jobProgressHistory.get(jobId) || [];
+    history.push(entry);
+    if (history.length > MAX_PROGRESS_HISTORY) history.splice(0, history.length - MAX_PROGRESS_HISTORY);
+    jobProgressHistory.set(jobId, history);
+
     const clients = sseClients.get(jobId) || [];
-    clients.forEach(res => res.write(`data: ${JSON.stringify(data)}\n\n`));
+    clients.forEach(res => res.write(`data: ${JSON.stringify(entry)}\n\n`));
 }
 
 function sendConvertStage(jobId, message, extra = {}) {
@@ -1506,6 +1517,12 @@ router.get('/api/progress/:jobId', (req, res) => {
     });
     if (typeof res.flushHeaders === 'function') res.flushHeaders();
     res.write(`data: ${JSON.stringify({ step: 'connected', message: 'Connected' })}\n\n`);
+
+    const history = jobProgressHistory.get(jobId) || [];
+    history.forEach(entry => {
+        res.write(`data: ${JSON.stringify(entry)}\n\n`);
+    });
+
     if (!sseClients.has(jobId)) sseClients.set(jobId, []);
     sseClients.get(jobId).push(res);
 
