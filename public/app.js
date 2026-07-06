@@ -238,8 +238,38 @@ form.addEventListener('submit', async (e) => {
         const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Error');
         currentJobId = d.jobId; formCard.classList.add('hidden'); progressCard.classList.remove('hidden'); addLog('🚀 Job dimulai...');
         const es = new EventSource(`/api/progress/${currentJobId}`);
-        es.onmessage = (ev) => { const m = JSON.parse(ev.data); if (m.progress >= 0) { progressBar.style.width = m.progress + '%'; progressPercent.textContent = m.progress + '%'; } if (m.message) { progressSubtitle.textContent = m.message; addLog(m.message, m.step.includes('done') ? 'done' : 'info'); } if (m.step === 'done') { es.close(); showResults(m.results); } if (m.step === 'error') { es.close(); addLog(m.message, 'error'); showError(m.error || m.message); } };
-        es.onerror = () => { es.close(); addLog('⚠️ Connection lost', 'error'); };
+        es.onmessage = (ev) => {
+            let m;
+            try {
+                m = JSON.parse(ev.data);
+            } catch (parseErr) {
+                console.error('Progress parse error:', parseErr, ev.data);
+                addLog('⚠️ Progress event invalid', 'error');
+                return;
+            }
+            if (typeof m.progress === 'number' && m.progress >= 0) {
+                progressBar.style.width = m.progress + '%';
+                progressPercent.textContent = m.progress + '%';
+            }
+            if (m.message) {
+                progressSubtitle.textContent = m.message;
+                const step = typeof m.step === 'string' ? m.step : '';
+                addLog(m.message, step.includes('done') ? 'done' : 'info');
+            }
+            if (m.step === 'done') {
+                es.close();
+                showResults(m.results);
+            }
+            if (m.step === 'error') {
+                es.close();
+                addLog(m.message, 'error');
+                showError(m.error || m.message);
+            }
+        };
+        es.onerror = (err) => {
+            console.error('SSE connection error:', err);
+            addLog('⚠️ Connection lost', 'error');
+        };
     } catch (err) { showError(err.message); }
 });
 

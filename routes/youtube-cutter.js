@@ -1498,11 +1498,30 @@ router.delete('/api/history/:id', (req, res) => {
 // === SSE PROGRESS ===
 router.get('/api/progress/:jobId', (req, res) => {
     const { jobId } = req.params;
-    res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' });
+    res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache, no-transform',
+        'Connection': 'keep-alive',
+        'X-Accel-Buffering': 'no'
+    });
+    if (typeof res.flushHeaders === 'function') res.flushHeaders();
     res.write(`data: ${JSON.stringify({ step: 'connected', message: 'Connected' })}\n\n`);
     if (!sseClients.has(jobId)) sseClients.set(jobId, []);
     sseClients.get(jobId).push(res);
-    req.on('close', () => { const c = sseClients.get(jobId) || []; sseClients.set(jobId, c.filter(x => x !== res)); });
+
+    const heartbeat = setInterval(() => {
+        try {
+            res.write(': keepalive\n\n');
+        } catch (e) {
+            clearInterval(heartbeat);
+        }
+    }, 15000);
+
+    req.on('close', () => {
+        clearInterval(heartbeat);
+        const c = sseClients.get(jobId) || [];
+        sseClients.set(jobId, c.filter(x => x !== res));
+    });
 });
 
 // === MAIN ANALYZE ENDPOINT ===
