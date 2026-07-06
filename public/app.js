@@ -865,8 +865,24 @@ function onConvertCaptionProviderChange() {
 function showSmartCropModal(clipIndex, ratio) { showConvertModal(clipIndex, ratio, 'edit'); }
 function closeSmartCropModal() { closeConvertModal(); }
 
+async function parseApiErrorResponse(resp, fallbackMessage) {
+    var text = '';
+    try { text = await resp.text(); } catch (e) { }
+    var contentType = (resp.headers.get('content-type') || '').toLowerCase();
+    if (contentType.includes('application/json')) {
+        try {
+            var data = JSON.parse(text || '{}');
+            return data.error || data.message || fallbackMessage;
+        } catch (e) { }
+    }
+    if (text && text.trim().startsWith('<!DOCTYPE')) {
+        return fallbackMessage + ' (server returned HTML, not JSON)';
+    }
+    return (text || fallbackMessage || 'Request failed').slice(0, 300);
+}
+
 async function confirmConvertModal() {
-    closeConvertModal();
+
     var smartCrop = document.getElementById('convertSmartCrop').checked;
     var detectMode = document.getElementById('convertDetectMode').value || 'balanced';
     var autoCaption = document.getElementById('convertAutoCaption').checked;
@@ -879,6 +895,7 @@ async function confirmConvertModal() {
 
     // If mode is 'edit', go to cropper editor (old Edit button behavior)
     if (_cvtMode === 'edit') {
+        closeConvertModal();
         editInCropper(_cvtClipIndex, _cvtRatio, smartCrop);
         return;
     }
@@ -917,14 +934,29 @@ async function confirmConvertModal() {
         try {
             convertStageES = new EventSource('/api/progress/' + currentJobId);
             convertStageES.onmessage = function (ev) {
-                var m = JSON.parse(ev.data || '{}');
-                if (m.step === 'convert_stage' && m.message) {
+                var m;
+                try {
+                    m = JSON.parse(ev.data || '{}');
+                } catch (e) {
+                    console.error('Convert progress parse error:', e, ev.data);
+                    return;
+                }
+                if (m.message && (m.step === 'convert_stage' || String(m.step || '').startsWith('convert_'))) {
                     appendConvertStage(m.message);
                     var detailEl = document.getElementById('convertLoadingDetail');
                     if (detailEl) detailEl.textContent = m.message;
                 }
+                if (m.step === 'error' && m.message) {
+                    appendConvertStage(m.message);
+                }
             };
-        } catch (e) { }
+            convertStageES.onerror = function (err) {
+                console.error('Convert SSE connection error:', err);
+                appendConvertStage('⚠️ Progress connection interrupted');
+            };
+        } catch (e) {
+            console.error('Convert SSE init error:', e);
+        }
     }
 
     try {
@@ -945,7 +977,7 @@ async function confirmConvertModal() {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ jobId: currentJobId, ratio: _cvtRatio, selectedIndices: selectedIndices, clipEndExtendMap: buildClipEndExtendMap(selectedIndices), smartCrop: smartCrop, detectMode: detectMode, autoCaption: autoCaption, captionProvider: captionProvider, elevenLabsKey: elevenLabsKey, whisperModel: whisperModel })
             });
-            if (!r.ok) { var e = await r.json(); throw new Error(e.error || 'Failed'); }
+            if (!r.ok) { throw new Error(await parseApiErrorResponse(r, 'Failed to convert selected clips')); }
             var videoUrl = r.headers.get('X-Video-Url') || '';
             var blob = await r.blob();
             var url = URL.createObjectURL(blob);
@@ -973,7 +1005,7 @@ async function confirmConvertModal() {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ jobId: currentJobId, clipIndex: clipIdx, ratio: _cvtRatio, endExtendSeconds: getClipEndExtendSeconds(clip), smartCrop: smartCrop, detectMode: detectMode, autoCaption: autoCaption, captionProvider: captionProvider, elevenLabsKey: elevenLabsKey, whisperModel: whisperModel })
             });
-            if (!r.ok) { var e = await r.json(); throw new Error(e.error || 'Failed'); }
+            if (!r.ok) { throw new Error(await parseApiErrorResponse(r, 'Failed to convert clip')); }
             var videoUrl = r.headers.get('X-Video-Url') || '';
             var blob = await r.blob();
             var url = URL.createObjectURL(blob);

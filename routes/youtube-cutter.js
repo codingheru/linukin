@@ -1782,6 +1782,7 @@ async function composeCropWatermarkCaption(inputVideoPath, outputVideoPath, tmpD
 
 router.post('/api/convert-ratio', async (req, res) => {
     const { jobId, clipIndex, ratio } = req.body;
+    sendConvertStage(jobId, `🎬 [Single] Convert request received (${ratio})`);
     const job = getJobData(jobId);
     if (!job) return res.status(404).json({ error: 'Job not found' });
     const idx = parseInt(clipIndex);
@@ -1879,6 +1880,7 @@ router.post('/api/convert-ratio', async (req, res) => {
         setTimeout(() => { try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { } }, 10000);
     } catch (error) {
         console.error('❌ convert-ratio failed:', error && error.stack ? error.stack : error);
+        sendConvertStage(jobId, `❌ [Single] Convert failed: ${error.message}`);
         try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { }
         if (!res.headersSent) res.status(500).json({ error: error.message });
     }
@@ -1886,6 +1888,7 @@ router.post('/api/convert-ratio', async (req, res) => {
 
 router.post('/api/convert-ratio-all', async (req, res) => {
     const { jobId, ratio } = req.body;
+    sendConvertStage(jobId, `🎬 [All] Convert request received (${ratio})`);
     const job = getJobData(jobId);
     if (!job) return res.status(404).json({ error: 'Job not found' });
     if (!RATIO_DIMENSIONS[ratio]) return res.status(400).json({ error: 'Invalid ratio' });
@@ -2001,7 +2004,8 @@ router.post('/api/convert-ratio-all', async (req, res) => {
         sendConvertStage(jobId, `✅ [All] Stage 3/3 Packaging done`);
         setTimeout(() => { try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { } }, 10000);
     } catch (error) {
-        console.error('❌ convert-ratio-all failed:', error && error.stack ? error.stack : error);
+        console.error('❌ bulk convert failed:', error && error.stack ? error.stack : error);
+        sendConvertStage(jobId, `❌ [All] Convert failed: ${error.message}`);
         try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { }
         if (!res.headersSent) res.status(500).json({ error: error.message });
     }
