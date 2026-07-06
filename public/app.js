@@ -121,6 +121,64 @@ function copyCaptionBtn(btn) {
     });
 }
 function addLog(msg, type = 'info') { const t = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }); const e = document.createElement('div'); e.className = `log-entry ${type === 'done' ? 'log-done' : ''} ${type === 'error' ? 'log-error' : ''}`; e.innerHTML = `<span class="log-time">${t}</span><span class="log-msg">${msg}</span>`; progressLog.appendChild(e); progressLog.scrollTop = progressLog.scrollHeight; }
+function clearProgressLog() { progressLog.innerHTML = ''; }
+function applyProgressEventToUI(m, options) {
+    options = options || {};
+    if (typeof m.progress === 'number' && m.progress >= 0) {
+        progressBar.style.width = m.progress + '%';
+        progressPercent.textContent = m.progress + '%';
+    }
+    if (m.message) {
+        progressSubtitle.textContent = m.message;
+        if (!options.skipLog) {
+            const step = typeof m.step === 'string' ? m.step : '';
+            addLog(m.message, step.includes('done') ? 'done' : (step === 'error' ? 'error' : 'info'));
+        }
+    }
+    if (m.step === 'done' && m.results) {
+        showResults(m.results);
+        return 'done';
+    }
+    if (m.step === 'error') {
+        if (!options.skipLog && m.message) addLog(m.message, 'error');
+        showError(m.error || m.message);
+        return 'error';
+    }
+    return 'continue';
+}
+function startProgressFallback(jobId, es) {
+    let seenCount = 0;
+    let pollTimer = null;
+    let stopped = false;
+    async function poll() {
+        if (stopped) return;
+        try {
+            const resp = await fetch(`/api/progress/${jobId}/history`, { cache: 'no-store' });
+            const data = await resp.json();
+            if (!resp.ok || !data.success || !Array.isArray(data.events)) return;
+            for (let i = seenCount; i < data.events.length; i++) {
+                const status = applyProgressEventToUI(data.events[i]);
+                seenCount = i + 1;
+                if (status === 'done' || status === 'error') {
+                    stop();
+                    return;
+                }
+            }
+        } catch (err) {
+            console.error('Progress polling error:', err);
+        }
+    }
+    function stop() {
+        stopped = true;
+        if (pollTimer) clearInterval(pollTimer);
+        if (es) {
+            try { es.close(); } catch (e) { }
+        }
+    }
+    poll();
+    pollTimer = setInterval(poll, 1000);
+    return { stop, syncCount: function (count) { if (count > seenCount) seenCount = count; } };
+}
 function copyCaption(el, t) { navigator.clipboard.writeText(t).then(() => { el.classList.add('copied'); setTimeout(() => el.classList.remove('copied'), 2000); }); }
 function toggleVideo(btn, i) {
     const w = document.getElementById(`clip-video-${i}`);
@@ -232,12 +290,18 @@ form.addEventListener('submit', async (e) => {
     const model = getSelectedModel(), clipCount = parseInt(clipCountSlider.value), minDur = parseInt(minSlider.value), maxDur = parseInt(maxSlider.value);
     const smartCrop = false;
     if (!youtubeUrl || !baseUrl || !apiKey) { alert('Masukkan YouTube URL, OpenAI-Compatible Base URL, dan API Key'); return; }
+    clearProgressLog();
+    progressBar.style.width = '0%';
+    progressPercent.textContent = '0%';
+    progressSubtitle.textContent = 'Memulai analisa...';
     submitBtn.disabled = true; submitBtn.classList.add('btn-loading'); submitBtn.textContent = '⏳ Memproses...';
     try {
         const r = await fetch('/api/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ youtubeUrl, baseUrl, apiKey, model, clipCount, minDuration: minDur, maxDuration: maxDur, smartCrop }) });
         const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Error');
         currentJobId = d.jobId; formCard.classList.add('hidden'); progressCard.classList.remove('hidden'); addLog('🚀 Job dimulai...');
+        let sseEventCount = 0;
         const es = new EventSource(`/api/progress/${currentJobId}`);
+        const progressFallback = startProgressFallback(currentJobId, es);
         es.onmessage = (ev) => {
             let m;
             try {
@@ -247,23 +311,11 @@ form.addEventListener('submit', async (e) => {
                 addLog('⚠️ Progress event invalid', 'error');
                 return;
             }
-            if (typeof m.progress === 'number' && m.progress >= 0) {
-                progressBar.style.width = m.progress + '%';
-                progressPercent.textContent = m.progress + '%';
-            }
-            if (m.message) {
-                progressSubtitle.textContent = m.message;
-                const step = typeof m.step === 'string' ? m.step : '';
-                addLog(m.message, step.includes('done') ? 'done' : 'info');
-            }
-            if (m.step === 'done') {
-                es.close();
-                showResults(m.results);
-            }
-            if (m.step === 'error') {
-                es.close();
-                addLog(m.message, 'error');
-                showError(m.error || m.message);
+            sseEventCount += 1;
+            progressFallback.syncCount(sseEventCount);
+            const status = applyProgressEventToUI(m);
+            if (status === 'done' || status === 'error') {
+                progressFallback.stop();
             }
         };
         es.onerror = (err) => {

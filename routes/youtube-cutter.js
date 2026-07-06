@@ -1541,6 +1541,12 @@ router.get('/api/progress/:jobId', (req, res) => {
     });
 });
 
+router.get('/api/progress/:jobId/history', (req, res) => {
+    const { jobId } = req.params;
+    const history = jobProgressHistory.get(jobId) || [];
+    res.json({ success: true, jobId, events: history });
+});
+
 // === MAIN ANALYZE ENDPOINT ===
 router.post('/api/analyze', async (req, res) => {
     const { youtubeUrl, baseUrl, apiKey, model, minDuration, maxDuration, clipCount, smartCrop } = req.body;
