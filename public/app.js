@@ -967,10 +967,19 @@ async function confirmConvertModal() {
         '<p style="font-size:1.1rem;font-weight:700" id="convertLoadingText">🎬 Converting...</p>' +
         '<p style="font-size:0.82rem;color:rgba(255,255,255,0.5)" id="convertLoadingDetail">Smart crop + caption processing</p>' +
         '<div id="convertStageLog" style="width:min(760px,90vw);max-height:220px;overflow:auto;padding:12px 14px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);border-radius:10px;font-size:0.82rem;line-height:1.45"></div>' +
+        '<div id="convertLoadingError" style="display:none;width:min(760px,90vw);padding:12px 14px;background:rgba(255,80,80,0.12);border:1px solid rgba(255,80,80,0.35);border-radius:10px;font-size:0.85rem;line-height:1.45;color:#ffd3d3"></div>' +
+        '<div id="convertLoadingActions" style="display:none;width:min(760px,90vw);justify-content:flex-end;gap:10px">' +
+        '<button type="button" id="convertDismissBtn" style="padding:10px 16px;border-radius:999px;border:1px solid rgba(255,255,255,0.16);background:rgba(255,255,255,0.06);color:#fff;cursor:pointer">Tutup</button>' +
+        '<button type="button" id="convertKeepOpenBtn" style="padding:10px 16px;border-radius:999px;border:1px solid rgba(167,139,250,0.35);background:rgba(167,139,250,0.18);color:#fff;cursor:pointer">Tetap lihat log</button>' +
+        '</div>' +
         '<style>@keyframes spin{to{transform:rotate(360deg)}}</style>';
     document.body.appendChild(loadingOverlay);
 
     var convertStageES = null;
+    var convertStagePoller = null;
+    var convertStageSeen = new Set();
+    var convertRequestFailed = false;
+    var convertDismissRequested = false;
     function appendConvertStage(msg) {
         var logEl = document.getElementById('convertStageLog');
         if (!logEl || !msg) return;
@@ -980,6 +989,55 @@ async function confirmConvertModal() {
         row.textContent = t + '  ' + msg;
         logEl.appendChild(row);
         logEl.scrollTop = logEl.scrollHeight;
+    }
+    function applyConvertStageEvent(m) {
+        if (!m || !m.message) return;
+        var key = [m._ts || '', m.step || '', m.message].join('|');
+        if (convertStageSeen.has(key)) return;
+        convertStageSeen.add(key);
+        if (m.step === 'convert_stage' || String(m.step || '').startsWith('convert_') || m.step === 'error') {
+            appendConvertStage(m.message);
+            var detailEl = document.getElementById('convertLoadingDetail');
+            if (detailEl) detailEl.textContent = m.message;
+        }
+    }
+    function setConvertOverlayError(message) {
+        convertRequestFailed = true;
+        var statusEl = document.getElementById('convertLoadingText');
+        var detailEl = document.getElementById('convertLoadingDetail');
+        var errEl = document.getElementById('convertLoadingError');
+        var actionsEl = document.getElementById('convertLoadingActions');
+        var dismissBtn = document.getElementById('convertDismissBtn');
+        var keepBtn = document.getElementById('convertKeepOpenBtn');
+        if (statusEl) statusEl.textContent = '⚠️ Convert request gagal';
+        if (detailEl) detailEl.textContent = 'Backend mungkin masih lanjut. Cek log terakhir di bawah.';
+        if (errEl) {
+            errEl.style.display = 'block';
+            errEl.textContent = message;
+        }
+        if (actionsEl) actionsEl.style.display = 'flex';
+        if (dismissBtn) dismissBtn.onclick = function () {
+            convertDismissRequested = true;
+            if (convertStageES) { try { convertStageES.close(); } catch (e) { } }
+            if (convertStagePoller) clearInterval(convertStagePoller);
+            var ov2 = document.getElementById('convertLoadingOverlay');
+            if (ov2) ov2.remove();
+        };
+        if (keepBtn) keepBtn.onclick = function () {
+            if (errEl) errEl.textContent = message + ' — log tetap dipantau.';
+        };
+    }
+    async function pollConvertStageHistory() {
+        if (!currentJobId) return;
+        try {
+            var resp = await fetch('/api/progress/' + currentJobId + '/history', { cache: 'no-store' });
+            if (!resp.ok) return;
+            var data = await resp.json();
+            var events = Array.isArray(data && data.events) ? data.events : [];
+            events.forEach(applyConvertStageEvent);
+        } catch (err) {
+            console.error('Convert history polling error:', err);
+        }
     }
 
     if (currentJobId) {
@@ -993,14 +1051,7 @@ async function confirmConvertModal() {
                     console.error('Convert progress parse error:', e, ev.data);
                     return;
                 }
-                if (m.message && (m.step === 'convert_stage' || String(m.step || '').startsWith('convert_'))) {
-                    appendConvertStage(m.message);
-                    var detailEl = document.getElementById('convertLoadingDetail');
-                    if (detailEl) detailEl.textContent = m.message;
-                }
-                if (m.step === 'error' && m.message) {
-                    appendConvertStage(m.message);
-                }
+                applyConvertStageEvent(m);
             };
             convertStageES.onerror = function (err) {
                 console.error('Convert SSE connection error:', err);
@@ -1009,6 +1060,8 @@ async function confirmConvertModal() {
         } catch (e) {
             console.error('Convert SSE init error:', e);
         }
+        pollConvertStageHistory();
+        convertStagePoller = setInterval(pollConvertStageHistory, 1200);
     }
 
     try {
@@ -1082,13 +1135,15 @@ async function confirmConvertModal() {
         document.getElementById('convertCompleteModal').style.display = 'flex';
 
     } catch (e) {
-        alert('Convert error: ' + e.message);
+        appendConvertStage('❌ Request gagal: ' + e.message);
+        setConvertOverlayError('Convert error: ' + e.message);
     } finally {
         if (convertStageES) {
             try { convertStageES.close(); } catch (e) { }
         }
+        if (convertStagePoller) clearInterval(convertStagePoller);
         var ov = document.getElementById('convertLoadingOverlay');
-        if (ov) ov.remove();
+        if (ov && !convertRequestFailed && !convertDismissRequested) ov.remove();
     }
 }
 
