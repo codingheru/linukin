@@ -1021,6 +1021,7 @@ async function confirmConvertModal() {
     var convertStageSeen = new Set();
     var convertRequestFailed = false;
     var convertDismissRequested = false;
+    var keepConvertOverlayOpen = false;
     function appendConvertStage(msg) {
         var logEl = document.getElementById('convertStageLog');
         if (!logEl || !msg) return;
@@ -1183,60 +1184,61 @@ async function confirmConvertModal() {
         var requestErrorMessage = e && e.message ? e.message : 'Convert request failed';
         var detailErrorEl = document.getElementById('convertLoadingDetail');
         var statusErrorEl = document.getElementById('convertLoadingText');
+        var errEl = document.getElementById('convertLoadingError');
+        var actionsEl = document.getElementById('convertLoadingActions');
+        keepConvertOverlayOpen = true;
+        convertRequestFailed = false;
         if (statusErrorEl) statusErrorEl.textContent = '⏳ Backend masih proses convert...';
-        if (detailErrorEl) detailErrorEl.textContent = 'Request browser gagal. Tetap pantau log backend dulu.';
+        if (detailErrorEl) detailErrorEl.textContent = 'Request browser gagal. Pantau log backend sampai ada status final.';
+        if (errEl) {
+            errEl.style.display = 'none';
+            errEl.textContent = '';
+        }
+        if (actionsEl) actionsEl.style.display = 'none';
         var startedWaitingAt = Date.now();
-        var lastSeenTs = lastConvertEventTs || 0;
-        var lastProgressAt = Date.now();
         var stabilized = false;
         var hasHardFailure = false;
-        var QUIET_TIMEOUT_MS = 90000;
         var MAX_WAIT_MS = 240000;
         while (Date.now() - startedWaitingAt < MAX_WAIT_MS) {
             await new Promise(function (resolve) { setTimeout(resolve, 2000); });
             await pollConvertStageHistory();
-            if (lastConvertEventTs > lastSeenTs) {
-                lastSeenTs = lastConvertEventTs;
-                lastProgressAt = Date.now();
-                if (detailErrorEl) detailErrorEl.textContent = 'Backend masih kirim log. Tunggu sampai selesai...';
-            }
             var historyResp = await fetch('/api/progress/' + currentJobId + '/history', { cache: 'no-store' });
-            if (historyResp.ok) {
-                var historyData = await historyResp.json();
-                var historyEvents = Array.isArray(historyData && historyData.events) ? historyData.events : [];
-                var hasPackagingDone = historyEvents.some(function (evt) {
-                    var msg = String(evt && evt.message || '');
-                    return msg.indexOf('Stage 3/3 Packaging done') !== -1;
-                });
-                hasHardFailure = historyEvents.some(function (evt) {
-                    var msg = String(evt && evt.message || '');
-                    return msg.indexOf('Convert failed') !== -1;
-                });
-                if (hasPackagingDone) {
-                    stabilized = true;
-                    if (statusErrorEl) statusErrorEl.textContent = '✅ Backend selesai convert';
-                    if (detailErrorEl) detailErrorEl.textContent = 'Response browser gagal, tapi log backend menunjukkan convert selesai.';
-                    break;
-                }
-                if (hasHardFailure) {
-                    break;
-                }
-            }
-            var quietForMs = Date.now() - lastProgressAt;
-            if (quietForMs >= QUIET_TIMEOUT_MS) {
-                if (detailErrorEl) detailErrorEl.textContent = 'Log backend berhenti cukup lama. Menganggap convert macet/gagal.';
+            if (!historyResp.ok) continue;
+            var historyData = await historyResp.json();
+            var historyEvents = Array.isArray(historyData && historyData.events) ? historyData.events : [];
+            var hasPackagingDone = historyEvents.some(function (evt) {
+                var msg = String(evt && evt.message || '');
+                return msg.indexOf('Stage 3/3 Packaging done') !== -1;
+            });
+            hasHardFailure = historyEvents.some(function (evt) {
+                var msg = String(evt && evt.message || '');
+                return msg.indexOf('Convert failed') !== -1;
+            });
+            if (hasPackagingDone) {
+                stabilized = true;
+                if (statusErrorEl) statusErrorEl.textContent = '✅ Backend selesai convert';
+                if (detailErrorEl) detailErrorEl.textContent = 'Response browser gagal, tapi log backend menunjukkan convert selesai.';
                 break;
             }
-        }
-        var logHint = lastConvertEventTs ? ' Lihat log terminal di atas.' : '';
-        if (!stabilized) {
             if (hasHardFailure) {
-                setConvertOverlayError('Convert error: ' + requestErrorMessage + logHint);
-            } else {
-                setConvertOverlayError('Convert error: Backend tidak kirim log baru cukup lama.' + logHint);
+                break;
             }
-        } else {
+            if (detailErrorEl) detailErrorEl.textContent = 'Backend masih proses convert. Tunggu log final...';
+        }
+        keepConvertOverlayOpen = false;
+        var logHint = lastConvertEventTs ? ' Lihat log terminal di atas.' : '';
+        if (stabilized) {
             convertRequestFailed = false;
+        } else if (hasHardFailure) {
+            setConvertOverlayError('Convert error: ' + requestErrorMessage + logHint);
+        } else {
+            if (statusErrorEl) statusErrorEl.textContent = '⏳ Menunggu keputusan user';
+            if (detailErrorEl) detailErrorEl.textContent = 'Request browser gagal, tapi backend tidak memberi status gagal. Cek log backend atau tutup manual.';
+            if (actionsEl) actionsEl.style.display = 'flex';
+            if (errEl) {
+                errEl.style.display = 'none';
+                errEl.textContent = '';
+            }
         }
     } finally {
         if (convertStageES) {
@@ -1244,7 +1246,7 @@ async function confirmConvertModal() {
         }
         if (convertStagePoller) clearInterval(convertStagePoller);
         var ov = document.getElementById('convertLoadingOverlay');
-        if (ov && !convertRequestFailed && !convertDismissRequested) ov.remove();
+        if (ov && !convertRequestFailed && !convertDismissRequested && !keepConvertOverlayOpen) ov.remove();
     }
 }
 
