@@ -1180,11 +1180,50 @@ async function confirmConvertModal() {
         document.getElementById('convertCompleteModal').style.display = 'flex';
 
     } catch (e) {
-        pollConvertStageHistory();
+        var requestErrorMessage = e && e.message ? e.message : 'Convert request failed';
         var detailErrorEl = document.getElementById('convertLoadingDetail');
-        if (detailErrorEl && !lastConvertEventTs) detailErrorEl.textContent = 'Menunggu log progress dari backend...';
+        var statusErrorEl = document.getElementById('convertLoadingText');
+        if (statusErrorEl) statusErrorEl.textContent = '⏳ Backend masih proses convert...';
+        if (detailErrorEl) detailErrorEl.textContent = 'Request browser gagal. Tetap pantau log backend dulu.';
+        var startedWaitingAt = Date.now();
+        var lastSeenTs = lastConvertEventTs || 0;
+        var stabilized = false;
+        while (Date.now() - startedWaitingAt < 180000) {
+            await new Promise(function (resolve) { setTimeout(resolve, 2000); });
+            await pollConvertStageHistory();
+            if (lastConvertEventTs > lastSeenTs) {
+                lastSeenTs = lastConvertEventTs;
+                if (detailErrorEl) detailErrorEl.textContent = 'Backend masih kirim log. Tunggu sampai selesai...';
+            }
+            var historyResp = await fetch('/api/progress/' + currentJobId + '/history', { cache: 'no-store' });
+            if (historyResp.ok) {
+                var historyData = await historyResp.json();
+                var historyEvents = Array.isArray(historyData && historyData.events) ? historyData.events : [];
+                var hasPackagingDone = historyEvents.some(function (evt) {
+                    var msg = String(evt && evt.message || '');
+                    return msg.indexOf('Stage 3/3 Packaging done') !== -1;
+                });
+                var hasConvertFailed = historyEvents.some(function (evt) {
+                    var msg = String(evt && evt.message || '');
+                    return msg.indexOf('Convert failed') !== -1;
+                });
+                if (hasPackagingDone) {
+                    stabilized = true;
+                    if (statusErrorEl) statusErrorEl.textContent = '✅ Backend selesai convert';
+                    if (detailErrorEl) detailErrorEl.textContent = 'Response browser gagal, tapi log backend menunjukkan convert selesai.';
+                    break;
+                }
+                if (hasConvertFailed) {
+                    break;
+                }
+            }
+        }
         var logHint = lastConvertEventTs ? ' Lihat log terminal di atas.' : '';
-        setConvertOverlayError('Convert error: ' + e.message + logHint);
+        if (!stabilized) {
+            setConvertOverlayError('Convert error: ' + requestErrorMessage + logHint);
+        } else {
+            convertRequestFailed = false;
+        }
     } finally {
         if (convertStageES) {
             try { convertStageES.close(); } catch (e) { }
