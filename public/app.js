@@ -1211,7 +1211,7 @@ async function confirmConvertModal() {
             var historyEvents = Array.isArray(historyData && historyData.events) ? historyData.events : [];
             var hasPackagingDone = historyEvents.some(function (evt) {
                 var msg = String(evt && evt.message || '');
-                return msg.indexOf('Stage 3/3 Packaging done') !== -1;
+                return msg.indexOf('3/3 Packaging done') !== -1 || msg.indexOf('Stage 3/3 Packaging') !== -1;
             });
             hasHardFailure = historyEvents.some(function (evt) {
                 var msg = String(evt && evt.message || '');
