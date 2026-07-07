@@ -67,7 +67,14 @@ function sendProgress(jobId, data) {
     jobProgressHistory.set(jobId, history);
 
     const clients = sseClients.get(jobId) || [];
-    clients.forEach(res => res.write(`data: ${JSON.stringify(entry)}\n\n`));
+    clients.forEach(res => {
+        try {
+            res.write(`data: ${JSON.stringify(entry)}\n\n`);
+            if (typeof res.flush === 'function') res.flush();
+        } catch (e) {
+            // Client gone — will be cleaned up via req.on('close')
+        }
+    });
 }
 
 function sendConvertStage(jobId, message, extra = {}) {
@@ -1565,11 +1572,13 @@ router.get('/api/progress/:jobId', (req, res) => {
     });
     if (typeof res.flushHeaders === 'function') res.flushHeaders();
     res.write(`data: ${JSON.stringify({ step: 'connected', message: 'Connected' })}\n\n`);
+    if (typeof res.flush === 'function') res.flush();
 
     const history = jobProgressHistory.get(jobId) || [];
     history.forEach(entry => {
         res.write(`data: ${JSON.stringify(entry)}\n\n`);
     });
+    if (typeof res.flush === 'function') res.flush();
 
     if (!sseClients.has(jobId)) sseClients.set(jobId, []);
     sseClients.get(jobId).push(res);
@@ -1577,6 +1586,7 @@ router.get('/api/progress/:jobId', (req, res) => {
     const heartbeat = setInterval(() => {
         try {
             res.write(': keepalive\n\n');
+            if (typeof res.flush === 'function') res.flush();
         } catch (e) {
             clearInterval(heartbeat);
         }
@@ -1997,7 +2007,7 @@ router.post('/api/convert-ratio-all', async (req, res) => {
             : job.results.map((clip, i) => ({ clip, originalIndex: i }));
         const convertedFiles = [];
         const stage1Prepared = [];
-        console.log(`🎬 convert-ratio-all mode: staged-parallel | ratio=${ratio} | workers=${CONVERT_WORKERS} | clips=${sourceResults.length}`);
+        logConvertStage(jobId, `🎬 convert-ratio-all mode: staged-parallel | ratio=${ratio} | workers=${CONVERT_WORKERS} | clips=${sourceResults.length}`);
         logConvertStage(jobId, `🎬 [All] Stage 1/3 Prepare Smart Crop start (${sourceResults.length} clip)`);
         for (let idx = 0; idx < sourceResults.length; idx++) {
             const entry = sourceResults[idx];
@@ -2014,9 +2024,8 @@ router.post('/api/convert-ratio-all', async (req, res) => {
                 const dims = await getVideoDimensions(videoPath);
                 const duration = preparedClip.duration || clip.duration || 30;
                 const detectMode = req.body.detectMode || 'balanced';
-                console.log(`🎬 [prepare ${idx + 1}/${sourceResults.length}] start | clip=${clip.clip_number}`);
+                logConvertStage(jobId, `🎬 [prepare ${idx + 1}/${sourceResults.length}] start | clip=${clip.clip_number}`);
                 logConvertStage(jobId, `🎬 [All] Preparing smart crop ${idx + 1}/${sourceResults.length}`);
-
 
                 // Smart Crop or Safe Mode
                 if (req.body.smartCrop === true && isFaceDetectionReady()) {
@@ -2024,7 +2033,7 @@ router.post('/api/convert-ratio-all', async (req, res) => {
                 } else if (false && req.body.smartCrop === true && isFaceDetectionReady()) {
                     const result = await computeFaceCrop(videoPath, 0, duration, clipTmpDir, targetDim.w, targetDim.h, dims.width, dims.height, detectMode);
                     let segments = Array.isArray(result?.segments) ? result.segments : ((result?.strategy) ? [{ start: 0, end: duration, ...result }] : [{ start: 0, end: duration, strategy: 'safe_mode', data: {} }]);
-                    const segFiles = [];
+
                     for (let si = 0; si < segments.length; si++) {
                         const seg = segments[si], segFile = path.join(clipTmpDir, `seg_${si}.mp4`);
                         segFiles.push(segFile);
@@ -2050,7 +2059,7 @@ router.post('/api/convert-ratio-all', async (req, res) => {
 
                 logConvertStage(jobId, `✅ [All] Smart crop ready ${idx + 1}/${sourceResults.length} (clip ${clip.clip_number})`);
                 stage1Prepared.push({ idx, clip, outputPath, outputFilename, basePath });
-                console.log(`🎬 [prepare ${idx + 1}/${sourceResults.length}] done`);
+                logConvertStage(jobId, `🎬 [prepare ${idx + 1}/${sourceResults.length}] done`);
             } catch (e) { console.error(`❌ Failed clip ${idx + 1}:`, e.message); }
         }
 
@@ -2061,18 +2070,25 @@ router.post('/api/convert-ratio-all', async (req, res) => {
             const clipWorkDir = path.join(tmpDir, `final_${idx}`);
             fs.mkdirSync(clipWorkDir, { recursive: true });
             try {
-                console.log(`🎬 [finalize ${idx + 1}/${sourceResults.length}] start | clip=${clip.clip_number}`);
+                logConvertStage(jobId, `🎬 [finalize ${idx + 1}/${sourceResults.length}] start | clip=${clip.clip_number}`);
                 logConvertStage(jobId, `🏷 [All] Finalizing ${idx + 1}/${sourceResults.length} (watermark + caption)`);
                 fs.copyFileSync(basePath, outputPath);
                 let assPath = null;
-                try { assPath = await buildCaptionAss(outputPath, clipWorkDir, idx, targetDim, req.body); }
+                try {
+                    assPath = await buildCaptionAss(outputPath, clipWorkDir, idx, targetDim, req.body);
+                    if (assPath && fs.existsSync(assPath)) {
+                        const assContent = fs.readFileSync(assPath, 'utf-8');
+                        const captionLineCount = (assContent.match(/Dialogue:/g) || []).length;
+                        logConvertStage(jobId, `✅ Caption clip ${idx + 1}: ${captionLineCount} lines`);
+                    }
+                }
                 catch (e) { console.log(`⚠️ Caption clip ${idx + 1} failed:`, e.message); }
                 const composedPath = path.join(clipWorkDir, `composed_${idx}.mp4`);
                 await composeCropWatermarkCaption(outputPath, composedPath, clipWorkDir, targetDim.w, assPath);
                 fs.copyFileSync(composedPath, outputPath);
                 logConvertStage(jobId, `✅ [All] Finalize done ${idx + 1}/${sourceResults.length} (clip ${clip.clip_number})`);
                 convertedFiles.push({ outputPath, outputFilename, clip });
-                console.log(`🎬 [finalize ${idx + 1}/${sourceResults.length}] done`);
+                logConvertStage(jobId, `🎬 [finalize ${idx + 1}/${sourceResults.length}] done`);
             } catch (e) {
                 console.error(`❌ Failed finalize clip ${idx + 1}:`, e.message);
             }
