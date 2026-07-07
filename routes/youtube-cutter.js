@@ -34,6 +34,14 @@ const sseClients = new Map();
 const jobResults = new Map();
 const jobProgressHistory = new Map();
 const MAX_PROGRESS_HISTORY = 500;
+const convertArtifacts = new Map();
+
+function makeConvertArtifactKey(jobId, mode, ratio, clipIndex = '', selectedIndices = []) {
+    const sel = Array.isArray(selectedIndices) ? selectedIndices.map(x => String(x)).sort().join(',') : '';
+    return [jobId || '', mode || '', ratio || '', String(clipIndex ?? ''), sel].join('::');
+}
+const convertJobHistory = new Map();
+const convertJobResults = new Map();
 
 function getJobData(jobId) {
     const inMemory = jobResults.get(jobId);
@@ -65,6 +73,38 @@ function sendProgress(jobId, data) {
 function sendConvertStage(jobId, message, extra = {}) {
     if (!jobId) return;
     sendProgress(jobId, { step: 'convert_stage', message, ...extra });
+}
+
+function pushConvertJobEvent(convertJobId, data) {
+    if (!convertJobId) return;
+    const entry = { ...data, _ts: Date.now() };
+    const history = convertJobHistory.get(convertJobId) || [];
+    history.push(entry);
+    if (history.length > MAX_PROGRESS_HISTORY) history.splice(0, history.length - MAX_PROGRESS_HISTORY);
+    convertJobHistory.set(convertJobId, history);
+    convertJobResults.set(convertJobId, {
+        ...(convertJobResults.get(convertJobId) || {}),
+        lastEvent: entry
+    });
+}
+
+function markConvertJobDone(convertJobId, payload) {
+    convertJobResults.set(convertJobId, {
+        ...(convertJobResults.get(convertJobId) || {}),
+        status: 'done',
+        ...payload
+    });
+    pushConvertJobEvent(convertJobId, { step: 'done', message: payload && payload.message ? payload.message : '✅ Convert selesai' });
+}
+
+function markConvertJobError(convertJobId, error) {
+    const message = error && error.message ? error.message : String(error || 'Unknown error');
+    convertJobResults.set(convertJobId, {
+        ...(convertJobResults.get(convertJobId) || {}),
+        status: 'error',
+        error: message
+    });
+    pushConvertJobEvent(convertJobId, { step: 'error', message: `❌ Convert failed: ${message}`, error: message });
 }
 
 function normalizeEndExtendSeconds(value) {
@@ -358,6 +398,7 @@ function normalizeClipType(rawType, clip = {}) {
     if (category === 'relatable moment') return 'moment';
     const normalized = String(rawType || '').trim().toLowerCase();
     const topicText = [clip.topic, clip.hook_title, clip.reason, clip.category].filter(Boolean).join(' ').toLowerCase();
+
 
     if (['funny', 'humor', 'humour', 'joke', 'comedy', 'lucu', 'ngakak'].includes(normalized)) return 'funny';
     if (['fact', 'facts', 'fakta', 'info', 'informative', 'edukasi', 'education'].includes(normalized)) return 'fact';
@@ -758,6 +799,7 @@ function buildGroundedCaption(clip, timestamps) {
         }
 
         const contentLine = kept.map(stripHashtags).find((l) => l && !looksLikeCta(l)) || '';
+
         if (!contentLine || isTextSupportedByClipTranscript(contentLine, localText, evidence)) {
             return kept.join('\n');
         }
@@ -1158,6 +1200,7 @@ async function runAnalyzeJob({ jobId, youtubeUrl, baseUrl, apiKey, model, minDur
             clip.topic = String(clip.topic || clip.angle || clip.theme || clip.hook_title || `Topik ${i + 1}`).trim();
             clip.caption = String(clip.caption || clip.summary || clip.description || '').trim();
             clip.reason = String(clip.reason || clip.why || clip.explanation || clip.rationale || `Segmen ini dipilih karena topiknya paling jelas, konteksnya utuh, dan payoff-nya kuat untuk short clip.`).trim();
+
             clip.evidence = normalizeEvidenceList(clip.evidence);
             clip.type = normalizeClipType(clip.type, clip);
             clip.start_time = Math.max(analysisStartOffset, Math.min(videoDuration, parseTimeValue(clip.start_time)));
@@ -1547,6 +1590,18 @@ router.get('/api/progress/:jobId/history', (req, res) => {
     res.json({ success: true, jobId, events: history });
 });
 
+router.get('/api/convert-artifact', (req, res) => {
+    const { jobId, mode, ratio, clipIndex, selectedIndices } = req.query;
+    const selected = typeof selectedIndices === 'string' && selectedIndices.trim()
+        ? selectedIndices.split(',').map(x => x.trim()).filter(Boolean)
+        : [];
+    const key = makeConvertArtifactKey(jobId, mode, ratio, clipIndex, selected);
+    const artifact = convertArtifacts.get(key);
+    if (!artifact) return res.status(404).json({ error: 'Convert artifact not found' });
+    res.json({ success: true, artifact });
+});
+
+
 // === MAIN ANALYZE ENDPOINT ===
 router.post('/api/analyze', async (req, res) => {
     const { youtubeUrl, baseUrl, apiKey, model, minDuration, maxDuration, clipCount, smartCrop } = req.body;
@@ -1876,14 +1931,30 @@ router.post('/api/convert-ratio', async (req, res) => {
         const buffer = Buffer.concat(chunks);
         res.setHeader('Content-Type', 'application/zip');
         res.setHeader('Content-Length', buffer.length);
-        res.setHeader('Content-Disposition', `attachment; filename="${job.videoTitle}_clip${clipNum}_${ratioTag}.zip"`);
+        const zipFilename = `${job.videoTitle}_clip${clipNum}_${ratioTag}.zip`;
+        convertArtifacts.set(makeConvertArtifactKey(jobId, 'single', ratio, idx, []), {
+            mode: 'single',
+            ratio,
+            clipIndex: idx,
+            zipFilename,
+            zipBase64: buffer.toString('base64'),
+            videoUrl: `/output/${outputFilename}`,
+            filename: outputFilename,
+            title: clip.hook_title || '',
+            caption: clip.caption || ''
+        });
+        res.setHeader('Content-Disposition', `attachment; filename="${zipFilename}"`);
         res.setHeader('X-Video-Url', `/output/${outputFilename}`);
         res.setHeader('Access-Control-Expose-Headers', 'X-Video-Url');
         res.end(buffer);
         console.log(`⏱ Stage 3/3 Output packaging done in ${((Date.now() - outputStarted) / 1000).toFixed(1)}s`);
         console.log(`⏱ Total convert time ${((Date.now() - totalStarted) / 1000).toFixed(1)}s`);
         sendConvertStage(jobId, `✅ [Single] Stage 3/3 Packaging done`);
-        setTimeout(() => { try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { } }, 10000);
+        setTimeout(() => {
+            try { convertArtifacts.delete(makeConvertArtifactKey(jobId, 'single', ratio, idx, [])); } catch { }
+            try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { }
+        }, 10000);
+
     } catch (error) {
         console.error('❌ convert-ratio failed:', error && error.stack ? error.stack : error);
         sendConvertStage(jobId, `❌ [Single] Convert failed: ${error.message}`);
@@ -1930,6 +2001,7 @@ router.post('/api/convert-ratio-all', async (req, res) => {
                 const detectMode = req.body.detectMode || 'balanced';
                 console.log(`🎬 [prepare ${idx + 1}/${sourceResults.length}] start | clip=${clip.clip_number}`);
                 sendConvertStage(jobId, `🎬 [All] Preparing smart crop ${idx + 1}/${sourceResults.length}`);
+
 
                 // Smart Crop or Safe Mode
                 if (req.body.smartCrop === true && isFaceDetectionReady()) {
@@ -2003,12 +2075,25 @@ router.post('/api/convert-ratio-all', async (req, res) => {
         });
         await archive.finalize();
         const buffer = Buffer.concat(chunks);
+        const artifactSelectedIndices = selectedIndices || sourceResults.map(({ originalIndex }) => originalIndex);
+        const zipFilename = `${job.videoTitle}_all_${ratioTag}.zip`;
+        convertArtifacts.set(makeConvertArtifactKey(jobId, 'all', ratio, '', artifactSelectedIndices), {
+            mode: 'all',
+            ratio,
+            selectedIndices: artifactSelectedIndices,
+            zipFilename,
+            zipBase64: buffer.toString('base64'),
+            clips: sourceResults.map(({ clip, originalIndex }) => Object.assign({}, clip, { originalIndex }))
+        });
         res.setHeader('Content-Type', 'application/zip');
         res.setHeader('Content-Length', buffer.length);
-        res.setHeader('Content-Disposition', `attachment; filename="${job.videoTitle}_all_${ratioTag}.zip"`);
+        res.setHeader('Content-Disposition', `attachment; filename="${zipFilename}"`);
         res.end(buffer);
         sendConvertStage(jobId, `✅ [All] Stage 3/3 Packaging done`);
-        setTimeout(() => { try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { } }, 10000);
+        setTimeout(() => {
+            try { convertArtifacts.delete(makeConvertArtifactKey(jobId, 'all', ratio, '', artifactSelectedIndices)); } catch { }
+            try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { }
+        }, 10000);
     } catch (error) {
         console.error('❌ bulk convert failed:', error && error.stack ? error.stack : error);
         sendConvertStage(jobId, `❌ [All] Convert failed: ${error.message}`);

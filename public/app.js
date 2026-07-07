@@ -933,6 +933,28 @@ async function parseApiErrorResponse(resp, fallbackMessage) {
     return (text || fallbackMessage || 'Request failed').slice(0, 300);
 }
 
+function b64ToBlob(base64, mimeType) {
+    var binary = atob(base64 || '');
+    var len = binary.length;
+    var bytes = new Uint8Array(len);
+    for (var i = 0; i < len; i++) bytes[i] = binary.charCodeAt(i);
+    return new Blob([bytes], { type: mimeType || 'application/octet-stream' });
+}
+
+async function tryRecoverConvertArtifact(opts) {
+    var params = new URLSearchParams();
+    params.set('jobId', opts.jobId || '');
+    params.set('mode', opts.mode || '');
+    params.set('ratio', opts.ratio || '');
+    if (opts.clipIndex !== undefined && opts.clipIndex !== null) params.set('clipIndex', String(opts.clipIndex));
+    if (Array.isArray(opts.selectedIndices) && opts.selectedIndices.length) params.set('selectedIndices', opts.selectedIndices.join(','));
+    var resp = await fetch('/api/convert-artifact?' + params.toString(), { cache: 'no-store' });
+    if (!resp.ok) throw new Error(await parseApiErrorResponse(resp, 'Convert artifact belum siap'));
+    var data = await resp.json();
+    if (!data || !data.success || !data.artifact || !data.artifact.zipBase64) throw new Error('Convert artifact kosong');
+    return data.artifact;
+}
+
 async function confirmConvertModal() {
 
     var smartCrop = document.getElementById('convertSmartCrop').checked;
@@ -1136,7 +1158,62 @@ async function confirmConvertModal() {
 
     } catch (e) {
         appendConvertStage('❌ Request gagal: ' + e.message);
-        setConvertOverlayError('Convert error: ' + e.message);
+        try {
+            appendConvertStage('🔄 Coba ambil hasil convert dari backend...');
+            var recoveredArtifact = await tryRecoverConvertArtifact({
+                jobId: currentJobId,
+                mode: _cvtMode === 'all' ? 'all' : 'single',
+                ratio: _cvtRatio,
+                clipIndex: _cvtMode === 'all' ? null : _cvtClipIndex,
+                selectedIndices: _cvtMode === 'all' ? getSelectedClipIndices() : []
+            });
+            var recoveredBlob = b64ToBlob(recoveredArtifact.zipBase64, 'application/zip');
+            var recoveredUrl = URL.createObjectURL(recoveredBlob);
+            _cvtLastVideoUrl = recoveredUrl;
+            if (_cvtMode === 'all') {
+                _cvtLastClipData = {
+                    title: 'All Clips (' + _cvtRatio + ')',
+                    caption: '',
+                    isZip: true,
+                    filename: recoveredArtifact.zipFilename || ('all_clips_' + _cvtRatio.replace(':', 'x') + '.zip'),
+                    videoUrl: '',
+                    mode: 'all',
+                    ratio: _cvtRatio,
+                    selectedIndices: recoveredArtifact.selectedIndices || getSelectedClipIndices(),
+                    clips: recoveredArtifact.clips || []
+                };
+            } else {
+                var recoveredClip = allResults[_cvtClipIndex] || {};
+                _cvtLastClipData = {
+                    title: recoveredArtifact.title || recoveredClip.hook_title || '',
+                    caption: recoveredArtifact.caption || recoveredClip.caption || '',
+                    isZip: true,
+                    filename: recoveredArtifact.zipFilename || ('clip_' + _cvtRatio.replace(':', 'x') + '.zip'),
+                    videoUrl: recoveredArtifact.videoUrl || '',
+                    mode: 'single',
+                    ratio: _cvtRatio,
+                    clipIndex: _cvtClipIndex
+                };
+            }
+            setConvertGlobalHashtagsRaw('');
+            var recoverInfoText = (smartCrop ? ('🧠 Smart Crop · ' + detectMode) : '📐 Safe Mode') + (autoCaption ? (' + 🎙 Caption(' + captionProvider + ')') : '') + ' · ' + _cvtRatio;
+            document.getElementById('convertCompleteInfo').textContent = recoverInfoText;
+            var recoverDlLink = document.getElementById('convertDownloadLink');
+            recoverDlLink.href = _cvtLastVideoUrl;
+            recoverDlLink.download = _cvtLastClipData.filename;
+            recoverDlLink.textContent = '⬇ Download';
+            document.getElementById('convertPreviewWrap').style.display = 'none';
+            bindConvertGlobalHashtagsInput();
+            updateConvertCompleteActions();
+            var overlayNow = document.getElementById('convertLoadingOverlay');
+            if (overlayNow) overlayNow.remove();
+            document.getElementById('convertCompleteModal').style.display = 'flex';
+            appendConvertStage('✅ Hasil convert berhasil dipulihkan dari backend');
+            convertRequestFailed = false;
+        } catch (recoverErr) {
+            appendConvertStage('❌ Recovery gagal: ' + recoverErr.message);
+            setConvertOverlayError('Convert error: ' + e.message);
+        }
     } finally {
         if (convertStageES) {
             try { convertStageES.close(); } catch (e) { }
