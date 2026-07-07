@@ -1282,11 +1282,14 @@ async function confirmConvertModal() {
                 clipIndex: clipIdx
             };
             console.log('[SINGLE CONVERT] About to show success modal. _cvtLastClipData:', _cvtLastClipData);
+            console.log('[ALL CONVERT] About to show success modal.');
+            console.log('[ALL CONVERT] _cvtLastVideoUrl:', _cvtLastVideoUrl, '| _cvtLastClipData:', _cvtLastClipData);
             setConvertGlobalHashtagsRaw('');
         }
 
         // Close loading overlay first, then show completion modal
         var loadingOv = document.getElementById('convertLoadingOverlay');
+        console.log('[ALL CONVERT] loadingOv exists:', !!loadingOv);
         if (loadingOv) loadingOv.remove();
         var infoText = (smartCrop ? ('🧠 Smart Crop · ' + detectMode) : '📐 Safe Mode') + (autoCaption ? (' + 🎙 Caption(' + captionProvider + ')') : '') + ' · ' + _cvtRatio;
         document.getElementById('convertCompleteInfo').textContent = infoText;
