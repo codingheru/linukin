@@ -1143,61 +1143,40 @@ async function confirmConvertModal() {
                 allFetchDone = true;
             });
 
-            // Wait for backend to finish — poll history until Stage 3/3 Packaging done
+            // Wait for backend to finish — poll artifact endpoint until success
             var startedAt = Date.now();
-            var hasPackagingDone = false;
-            var hasConvertFailed = false;
             var MAX_WAIT = 600000; // 10 min max
+            var recoveredArtifact = null;
+            var lastPollError = '';
             while (Date.now() - startedAt < MAX_WAIT) {
                 await new Promise(function(resolve) { setTimeout(resolve, 2500); });
                 await pollConvertStageHistory();
-                var hResp = await fetch('/api/progress/' + currentJobId + '/history', { cache: 'no-store' });
-                if (!hResp.ok) continue;
-                var hData = await hResp.json();
-                var hEvents = Array.isArray(hData && hData.events) ? hData.events : [];
-                hasPackagingDone = hEvents.some(function(evt) {
-                    var msg = String(evt && evt.message || '');
-                    return msg.indexOf('3/3 Packaging done') !== -1 || msg.indexOf('Stage 3/3 Packaging') !== -1;
-                });
-                hasConvertFailed = hEvents.some(function(evt) {
-                    var msg = String(evt && evt.message || '');
-                    return msg.indexOf('Convert failed') !== -1;
-                });
-                if (hasPackagingDone || hasConvertFailed) break;
                 if (detailEl) detailEl.textContent = '🎬 Backend proses convert ' + selectedIndices.length + ' clips...';
+                try {
+                    var aResp = await fetch('/api/convert-artifact?' + new URLSearchParams({
+                        jobId: currentJobId, mode: 'all', ratio: _cvtRatio,
+                        selectedIndices: selectedIndices.join(',')
+                    }), { cache: 'no-store' });
+                    if (aResp.ok) {
+                        var aData = await aResp.json();
+                        if (aData && aData.success && aData.artifact) {
+                            recoveredArtifact = aData.artifact;
+                            break;
+                        }
+                    } else {
+                        lastPollError = 'artifact status: ' + aResp.status;
+                    }
+                } catch(e) {
+                    lastPollError = e && e.message ? e.message : 'network error';
+                }
             }
-            // Cancel the original fetch now that we got our result from history
             allController.abort();
-            console.log('[ALL CONVERT] Packaging done detected:', hasPackagingDone, '| Failed:', hasConvertFailed);
-            if (hasConvertFailed) {
-                throw new Error('Convert failed on backend');
+            if (!recoveredArtifact) {
+                console.error('[ALL CONVERT] Artifact never available after 10 min. Last error:', lastPollError);
+                throw new Error('Convert timeout — artifact tidak tersedia setelah 10 menit. ' + lastPollError);
             }
-            if (!hasPackagingDone) {
-                throw new Error('Convert timeout — backend tidak selesai dalam 10 menit');
-            }
-            // Recover artifact from backend memory
             if (statusEl) statusEl.textContent = '📦 Backend selesai. Ambil hasil...';
-            console.log('[ALL CONVERT] Starting artifact recovery...');
-            var recoveredArtifact = null;
-            try {
-                recoveredArtifact = await tryRecoverConvertArtifact({
-                    jobId: currentJobId,
-                    mode: 'all',
-                    ratio: _cvtRatio,
-                    clipIndex: null,
-                    selectedIndices: selectedIndices,
-                    maxAttempts: 20,
-                    delayMs: 1500
-                });
-                console.log('[ALL CONVERT] Artifact recovered:', recoveredArtifact ? 'YES' : 'NULL', recoveredArtifact && recoveredArtifact.zipFilename);
-            } catch(recErr) {
-                console.error('[ALL CONVERT] Recover failed:', recErr);
-            }
-            if (!recoveredArtifact || !recoveredArtifact.zipBase64) {
-                console.error('[ALL CONVERT] Artifact empty, throwing...');
-                throw new Error('Gagal mengambil hasil convert dari backend');
-            }
-            console.log('[ALL CONVERT] Building download URL...');
+            console.log('[ALL CONVERT] Artifact recovered:', recoveredArtifact.zipFilename);
             _cvtLastVideoUrl = URL.createObjectURL(b64ToBlob(recoveredArtifact.zipBase64, 'application/zip'));
             _cvtLastClipData = {
                 title: 'All Clips (' + _cvtRatio + ')',
@@ -1210,7 +1189,7 @@ async function confirmConvertModal() {
                 selectedIndices: selectedIndices,
                 clips: selectedClips
             };
-            console.log('[ALL CONVERT] About to show success modal. _cvtLastClipData:', _cvtLastClipData);
+            console.log('[ALL CONVERT] About to show success modal.');
             setConvertGlobalHashtagsRaw('');
         } else {
             // Convert single clip — fire request without waiting for full response
