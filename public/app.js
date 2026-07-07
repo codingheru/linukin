@@ -1165,7 +1165,9 @@ async function confirmConvertModal() {
             setConvertGlobalHashtagsRaw('');
         }
 
-        // Show completion modal
+        // Close loading overlay first, then show completion modal
+        var loadingOv = document.getElementById('convertLoadingOverlay');
+        if (loadingOv) loadingOv.remove();
         var infoText = (smartCrop ? ('🧠 Smart Crop · ' + detectMode) : '📐 Safe Mode') + (autoCaption ? (' + 🎙 Caption(' + captionProvider + ')') : '') + ' · ' + _cvtRatio;
         document.getElementById('convertCompleteInfo').textContent = infoText;
         var dlLink = document.getElementById('convertDownloadLink');
