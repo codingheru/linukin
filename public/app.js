@@ -1187,12 +1187,17 @@ async function confirmConvertModal() {
         if (detailErrorEl) detailErrorEl.textContent = 'Request browser gagal. Tetap pantau log backend dulu.';
         var startedWaitingAt = Date.now();
         var lastSeenTs = lastConvertEventTs || 0;
+        var lastProgressAt = Date.now();
         var stabilized = false;
-        while (Date.now() - startedWaitingAt < 180000) {
+        var hasHardFailure = false;
+        var QUIET_TIMEOUT_MS = 90000;
+        var MAX_WAIT_MS = 240000;
+        while (Date.now() - startedWaitingAt < MAX_WAIT_MS) {
             await new Promise(function (resolve) { setTimeout(resolve, 2000); });
             await pollConvertStageHistory();
             if (lastConvertEventTs > lastSeenTs) {
                 lastSeenTs = lastConvertEventTs;
+                lastProgressAt = Date.now();
                 if (detailErrorEl) detailErrorEl.textContent = 'Backend masih kirim log. Tunggu sampai selesai...';
             }
             var historyResp = await fetch('/api/progress/' + currentJobId + '/history', { cache: 'no-store' });
@@ -1203,7 +1208,7 @@ async function confirmConvertModal() {
                     var msg = String(evt && evt.message || '');
                     return msg.indexOf('Stage 3/3 Packaging done') !== -1;
                 });
-                var hasConvertFailed = historyEvents.some(function (evt) {
+                hasHardFailure = historyEvents.some(function (evt) {
                     var msg = String(evt && evt.message || '');
                     return msg.indexOf('Convert failed') !== -1;
                 });
@@ -1213,14 +1218,23 @@ async function confirmConvertModal() {
                     if (detailErrorEl) detailErrorEl.textContent = 'Response browser gagal, tapi log backend menunjukkan convert selesai.';
                     break;
                 }
-                if (hasConvertFailed) {
+                if (hasHardFailure) {
                     break;
                 }
+            }
+            var quietForMs = Date.now() - lastProgressAt;
+            if (quietForMs >= QUIET_TIMEOUT_MS) {
+                if (detailErrorEl) detailErrorEl.textContent = 'Log backend berhenti cukup lama. Menganggap convert macet/gagal.';
+                break;
             }
         }
         var logHint = lastConvertEventTs ? ' Lihat log terminal di atas.' : '';
         if (!stabilized) {
-            setConvertOverlayError('Convert error: ' + requestErrorMessage + logHint);
+            if (hasHardFailure) {
+                setConvertOverlayError('Convert error: ' + requestErrorMessage + logHint);
+            } else {
+                setConvertOverlayError('Convert error: Backend tidak kirim log baru cukup lama.' + logHint);
+            }
         } else {
             convertRequestFailed = false;
         }
