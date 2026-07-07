@@ -1101,7 +1101,6 @@ async function confirmConvertModal() {
             };
             convertStageES.onerror = function (err) {
                 console.error('Convert SSE connection error:', err);
-                appendConvertStage('⚠️ Progress connection interrupted');
             };
         } catch (e) {
             console.error('Convert SSE init error:', e);
@@ -1181,76 +1180,11 @@ async function confirmConvertModal() {
         document.getElementById('convertCompleteModal').style.display = 'flex';
 
     } catch (e) {
-        appendConvertStage('❌ Request gagal: ' + e.message);
-        try {
-            appendConvertStage('🔄 Coba ambil hasil convert dari backend...');
-            var recoveryDetailEl = document.getElementById('convertLoadingDetail');
-            var recoveredArtifact = await tryRecoverConvertArtifact({
-                jobId: currentJobId,
-                mode: _cvtMode === 'all' ? 'all' : 'single',
-                ratio: _cvtRatio,
-                clipIndex: _cvtMode === 'all' ? null : _cvtClipIndex,
-                selectedIndices: _cvtMode === 'all' ? getSelectedClipIndices() : [],
-                maxAttempts: 45,
-                delayMs: 2000,
-                onAttempt: function (attempt, maxAttempts) {
-                    if (recoveryDetailEl) recoveryDetailEl.textContent = 'Menunggu backend menyelesaikan packaging... (' + attempt + '/' + maxAttempts + ')';
-                    if (attempt === 1 || attempt % 5 === 0) appendConvertStage('⏳ Recovery attempt ' + attempt + '/' + maxAttempts + '...');
-                }
-            });
-            var recoveredBlob = b64ToBlob(recoveredArtifact.zipBase64, 'application/zip');
-            var recoveredUrl = URL.createObjectURL(recoveredBlob);
-            _cvtLastVideoUrl = recoveredUrl;
-            appendConvertStage('✅ Artifact siap. Menampilkan hasil convert...');
-            var recoveryDetailOkEl = document.getElementById('convertLoadingDetail');
-            if (recoveryDetailOkEl) recoveryDetailOkEl.textContent = 'Artifact berhasil dipulihkan dari backend.';
-
-            if (_cvtMode === 'all') {
-                _cvtLastClipData = {
-                    title: 'All Clips (' + _cvtRatio + ')',
-                    caption: '',
-                    isZip: true,
-                    filename: recoveredArtifact.zipFilename || ('all_clips_' + _cvtRatio.replace(':', 'x') + '.zip'),
-                    videoUrl: '',
-                    mode: 'all',
-                    ratio: _cvtRatio,
-                    selectedIndices: recoveredArtifact.selectedIndices || getSelectedClipIndices(),
-                    clips: recoveredArtifact.clips || []
-                };
-            } else {
-                var recoveredClip = allResults[_cvtClipIndex] || {};
-                _cvtLastClipData = {
-                    title: recoveredArtifact.title || recoveredClip.hook_title || '',
-                    caption: recoveredArtifact.caption || recoveredClip.caption || '',
-                    isZip: true,
-                    filename: recoveredArtifact.zipFilename || ('clip_' + _cvtRatio.replace(':', 'x') + '.zip'),
-                    videoUrl: recoveredArtifact.videoUrl || '',
-                    mode: 'single',
-                    ratio: _cvtRatio,
-                    clipIndex: _cvtClipIndex
-                };
-            }
-            setConvertGlobalHashtagsRaw('');
-            var recoverInfoText = (smartCrop ? ('🧠 Smart Crop · ' + detectMode) : '📐 Safe Mode') + (autoCaption ? (' + 🎙 Caption(' + captionProvider + ')') : '') + ' · ' + _cvtRatio;
-            document.getElementById('convertCompleteInfo').textContent = recoverInfoText;
-            var recoverDlLink = document.getElementById('convertDownloadLink');
-            recoverDlLink.href = _cvtLastVideoUrl;
-            recoverDlLink.download = _cvtLastClipData.filename;
-            recoverDlLink.textContent = '⬇ Download';
-            document.getElementById('convertPreviewWrap').style.display = 'none';
-            bindConvertGlobalHashtagsInput();
-            updateConvertCompleteActions();
-            var overlayNow = document.getElementById('convertLoadingOverlay');
-            if (overlayNow) overlayNow.remove();
-            document.getElementById('convertCompleteModal').style.display = 'flex';
-            appendConvertStage('✅ Hasil convert berhasil dipulihkan dari backend');
-            convertRequestFailed = false;
-        } catch (recoverErr) {
-            appendConvertStage('❌ Recovery gagal: ' + recoverErr.message);
-            pollConvertStageHistory();
-            var logHint = lastConvertEventTs ? ' Lihat log terakhir di atas.' : '';
-            setConvertOverlayError('Convert error: ' + e.message + logHint);
-        }
+        pollConvertStageHistory();
+        var detailErrorEl = document.getElementById('convertLoadingDetail');
+        if (detailErrorEl && !lastConvertEventTs) detailErrorEl.textContent = 'Menunggu log progress dari backend...';
+        var logHint = lastConvertEventTs ? ' Lihat log terminal di atas.' : '';
+        setConvertOverlayError('Convert error: ' + e.message + logHint);
     } finally {
         if (convertStageES) {
             try { convertStageES.close(); } catch (e) { }
