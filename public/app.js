@@ -1124,21 +1124,71 @@ async function confirmConvertModal() {
             if (statusEl) statusEl.textContent = '🎬 Converting ' + selectedIndices.length + ' clips...';
             if (detailEl) detailEl.textContent = (smartCrop ? ('Smart Crop · ' + detectMode) : 'Safe Mode') + (autoCaption ? (' + Caption(' + captionProvider + ')') : '');
 
-            var r = await fetch('/api/convert-ratio-all', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ jobId: currentJobId, ratio: _cvtRatio, selectedIndices: selectedIndices, clipEndExtendMap: buildClipEndExtendMap(selectedIndices), smartCrop: smartCrop, detectMode: detectMode, autoCaption: autoCaption, captionProvider: captionProvider, elevenLabsKey: elevenLabsKey, whisperModel: whisperModel })
-            });
-            if (!r.ok) { throw new Error(await parseApiErrorResponse(r, 'Failed to convert selected clips')); }
-            var videoUrl = r.headers.get('X-Video-Url') || '';
-            var blob = await r.blob();
-            var url = URL.createObjectURL(blob);
-            _cvtLastVideoUrl = url;
+            // Fire the request — don't await full response (may timeout through proxy)
+            var allController = new AbortController();
+            fetch('/api/convert-ratio-all', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ jobId: currentJobId, ratio: _cvtRatio, selectedIndices: selectedIndices, clipEndExtendMap: buildClipEndExtendMap(selectedIndices), smartCrop: smartCrop, detectMode: detectMode, autoCaption: autoCaption, captionProvider: captionProvider, elevenLabsKey: elevenLabsKey, whisperModel: whisperModel }),
+                signal: allController.signal
+            }).catch(function() { /* fire-and-forget */ });
+
+            // Wait for backend to finish — poll history until Stage 3/3 Packaging done
+            var startedAt = Date.now();
+            var hasPackagingDone = false;
+            var hasConvertFailed = false;
+            var MAX_WAIT = 600000; // 10 min max
+            while (Date.now() - startedAt < MAX_WAIT) {
+                await new Promise(function(resolve) { setTimeout(resolve, 2500); });
+                await pollConvertStageHistory();
+                var hResp = await fetch('/api/progress/' + currentJobId + '/history', { cache: 'no-store' });
+                if (!hResp.ok) continue;
+                var hData = await hResp.json();
+                var hEvents = Array.isArray(hData && hData.events) ? hData.events : [];
+                hasPackagingDone = hEvents.some(function(evt) {
+                    var msg = String(evt && evt.message || '');
+                    return msg.indexOf('3/3 Packaging done') !== -1 || msg.indexOf('Stage 3/3 Packaging') !== -1;
+                });
+                hasConvertFailed = hEvents.some(function(evt) {
+                    var msg = String(evt && evt.message || '');
+                    return msg.indexOf('Convert failed') !== -1;
+                });
+                if (hasPackagingDone || hasConvertFailed) break;
+                if (detailEl) detailEl.textContent = '🎬 Backend proses convert ' + selectedIndices.length + ' clips...';
+            }
+            allController.abort();
+            if (hasConvertFailed) {
+                throw new Error('Convert failed on backend');
+            }
+            if (!hasPackagingDone) {
+                throw new Error('Convert timeout — backend tidak selesai dalam 10 menit');
+            }
+            // Recover artifact from backend memory
+            if (statusEl) statusEl.textContent = '📦 Backend selesai. Ambil hasil...';
+            var recoveredArtifact = null;
+            try {
+                recoveredArtifact = await tryRecoverConvertArtifact({
+                    jobId: currentJobId,
+                    mode: 'all',
+                    ratio: _cvtRatio,
+                    clipIndex: null,
+                    selectedIndices: selectedIndices,
+                    maxAttempts: 20,
+                    delayMs: 1500
+                });
+            } catch(recErr) {
+                console.error('Recover all convert artifact failed:', recErr);
+            }
+            if (!recoveredArtifact || !recoveredArtifact.zipBase64) {
+                throw new Error('Gagal mengambil hasil convert dari backend');
+            }
+            _cvtLastVideoUrl = URL.createObjectURL(b64ToBlob(recoveredArtifact.zipBase64, 'application/zip'));
             _cvtLastClipData = {
                 title: 'All Clips (' + _cvtRatio + ')',
                 caption: '',
                 isZip: true,
-                filename: 'all_clips_' + _cvtRatio.replace(':', 'x') + '.zip',
-                videoUrl: videoUrl,
+                filename: recoveredArtifact.zipFilename || ('all_clips_' + _cvtRatio.replace(':', 'x') + '.zip'),
+                videoUrl: '',
                 mode: 'all',
                 ratio: _cvtRatio,
                 selectedIndices: selectedIndices,
