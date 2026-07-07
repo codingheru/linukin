@@ -1068,6 +1068,7 @@ async function confirmConvertModal() {
             if (errEl) errEl.textContent = message + ' — log tetap dipantau.';
         };
     }
+    var lastConvertEventTs = 0;
     async function pollConvertStageHistory() {
         if (!currentJobId) return;
         try {
@@ -1075,7 +1076,11 @@ async function confirmConvertModal() {
             if (!resp.ok) return;
             var data = await resp.json();
             var events = Array.isArray(data && data.events) ? data.events : [];
-            events.forEach(applyConvertStageEvent);
+            events.forEach(function (evt) {
+                applyConvertStageEvent(evt);
+                var evtTs = Number(evt && evt._ts || 0);
+                if (evtTs > lastConvertEventTs) lastConvertEventTs = evtTs;
+            });
         } catch (err) {
             console.error('Convert history polling error:', err);
         }
@@ -1242,7 +1247,9 @@ async function confirmConvertModal() {
             convertRequestFailed = false;
         } catch (recoverErr) {
             appendConvertStage('❌ Recovery gagal: ' + recoverErr.message);
-            setConvertOverlayError('Convert error: ' + e.message);
+            pollConvertStageHistory();
+            var logHint = lastConvertEventTs ? ' Lihat log terakhir di atas.' : '';
+            setConvertOverlayError('Convert error: ' + e.message + logHint);
         }
     } finally {
         if (convertStageES) {
