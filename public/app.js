@@ -948,11 +948,30 @@ async function tryRecoverConvertArtifact(opts) {
     params.set('ratio', opts.ratio || '');
     if (opts.clipIndex !== undefined && opts.clipIndex !== null) params.set('clipIndex', String(opts.clipIndex));
     if (Array.isArray(opts.selectedIndices) && opts.selectedIndices.length) params.set('selectedIndices', opts.selectedIndices.join(','));
-    var resp = await fetch('/api/convert-artifact?' + params.toString(), { cache: 'no-store' });
-    if (!resp.ok) throw new Error(await parseApiErrorResponse(resp, 'Convert artifact belum siap'));
-    var data = await resp.json();
-    if (!data || !data.success || !data.artifact || !data.artifact.zipBase64) throw new Error('Convert artifact kosong');
-    return data.artifact;
+    var maxAttempts = Number(opts.maxAttempts || 45);
+    var delayMs = Number(opts.delayMs || 2000);
+    var onAttempt = typeof opts.onAttempt === 'function' ? opts.onAttempt : null;
+    var lastError = null;
+    for (var attempt = 1; attempt <= maxAttempts; attempt++) {
+        if (onAttempt) onAttempt(attempt, maxAttempts);
+        try {
+            var resp = await fetch('/api/convert-artifact?' + params.toString(), { cache: 'no-store' });
+            if (resp.ok) {
+                var data = await resp.json();
+                if (data && data.success && data.artifact && data.artifact.zipBase64) return data.artifact;
+                lastError = new Error('Convert artifact kosong');
+            } else {
+                var message = await parseApiErrorResponse(resp, 'Convert artifact belum siap');
+                lastError = new Error(message);
+            }
+        } catch (err) {
+            lastError = err;
+        }
+        if (attempt < maxAttempts) {
+            await new Promise(function (resolve) { setTimeout(resolve, delayMs); });
+        }
+    }
+    throw lastError || new Error('Convert artifact belum siap');
 }
 
 async function confirmConvertModal() {
@@ -1160,16 +1179,27 @@ async function confirmConvertModal() {
         appendConvertStage('❌ Request gagal: ' + e.message);
         try {
             appendConvertStage('🔄 Coba ambil hasil convert dari backend...');
+            var recoveryDetailEl = document.getElementById('convertLoadingDetail');
             var recoveredArtifact = await tryRecoverConvertArtifact({
                 jobId: currentJobId,
                 mode: _cvtMode === 'all' ? 'all' : 'single',
                 ratio: _cvtRatio,
                 clipIndex: _cvtMode === 'all' ? null : _cvtClipIndex,
-                selectedIndices: _cvtMode === 'all' ? getSelectedClipIndices() : []
+                selectedIndices: _cvtMode === 'all' ? getSelectedClipIndices() : [],
+                maxAttempts: 45,
+                delayMs: 2000,
+                onAttempt: function (attempt, maxAttempts) {
+                    if (recoveryDetailEl) recoveryDetailEl.textContent = 'Menunggu backend menyelesaikan packaging... (' + attempt + '/' + maxAttempts + ')';
+                    if (attempt === 1 || attempt % 5 === 0) appendConvertStage('⏳ Recovery attempt ' + attempt + '/' + maxAttempts + '...');
+                }
             });
             var recoveredBlob = b64ToBlob(recoveredArtifact.zipBase64, 'application/zip');
             var recoveredUrl = URL.createObjectURL(recoveredBlob);
             _cvtLastVideoUrl = recoveredUrl;
+            appendConvertStage('✅ Artifact siap. Menampilkan hasil convert...');
+            var recoveryDetailOkEl = document.getElementById('convertLoadingDetail');
+            if (recoveryDetailOkEl) recoveryDetailOkEl.textContent = 'Artifact berhasil dipulihkan dari backend.';
+
             if (_cvtMode === 'all') {
                 _cvtLastClipData = {
                     title: 'All Clips (' + _cvtRatio + ')',

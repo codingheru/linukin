@@ -1597,8 +1597,18 @@ router.get('/api/convert-artifact', (req, res) => {
         : [];
     const key = makeConvertArtifactKey(jobId, mode, ratio, clipIndex, selected);
     const artifact = convertArtifacts.get(key);
-    if (!artifact) return res.status(404).json({ error: 'Convert artifact not found' });
-    res.json({ success: true, artifact });
+    const history = jobId ? (jobProgressHistory.get(jobId) || []) : [];
+    const latestMessage = history.length ? String(history[history.length - 1].message || '') : '';
+    const packagingDone = history.some(evt => String(evt && evt.message || '').includes('Stage 3/3 Packaging done'));
+    if (!artifact) {
+        return res.status(404).json({
+            error: packagingDone ? 'Convert artifact missing after packaging done' : 'Convert artifact belum siap',
+            pending: !packagingDone,
+            packagingDone,
+            latestMessage
+        });
+    }
+    res.json({ success: true, artifact, packagingDone, latestMessage });
 });
 
 
