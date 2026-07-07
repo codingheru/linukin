@@ -1146,22 +1146,90 @@ async function confirmConvertModal() {
             };
             setConvertGlobalHashtagsRaw('');
         } else {
-            // Convert single clip
+            // Convert single clip — fire request without waiting for full response
             var clipIdx = _cvtClipIndex;
             var clip = allResults[clipIdx];
             if (statusEl) statusEl.textContent = '🎬 Converting clip ' + clip.clip_number + '...';
             if (detailEl) detailEl.textContent = (smartCrop ? ('Smart Crop · ' + detectMode) : 'Safe Mode') + (autoCaption ? (' + Caption(' + captionProvider + ')') : '');
 
-            var r = await fetch('/api/convert-ratio', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ jobId: currentJobId, clipIndex: clipIdx, ratio: _cvtRatio, endExtendSeconds: getClipEndExtendSeconds(clip), smartCrop: smartCrop, detectMode: detectMode, autoCaption: autoCaption, captionProvider: captionProvider, elevenLabsKey: elevenLabsKey, whisperModel: whisperModel })
+            // Fire the request — don't await full response (may timeout through proxy)
+            var fetchDone = false;
+            var fetchHadError = false;
+            var controller = new AbortController();
+            fetch('/api/convert-ratio', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ jobId: currentJobId, clipIndex: clipIdx, ratio: _cvtRatio, endExtendSeconds: getClipEndExtendSeconds(clip), smartCrop: smartCrop, detectMode: detectMode, autoCaption: autoCaption, captionProvider: captionProvider, elevenLabsKey: elevenLabsKey, whisperModel: whisperModel }),
+                signal: controller.signal
+            }).then(function(r) {
+                if (!r.ok) fetchHadError = true;
+                fetchDone = true;
+            }).catch(function() {
+                fetchHadError = true;
+                fetchDone = true;
             });
-            if (!r.ok) { throw new Error(await parseApiErrorResponse(r, 'Failed to convert clip')); }
-            var videoUrl = r.headers.get('X-Video-Url') || '';
-            var blob = await r.blob();
-            var url = URL.createObjectURL(blob);
-            _cvtLastVideoUrl = url;
-            _cvtLastClipData = { title: clip.hook_title || '', caption: clip.caption || '', isZip: true, filename: 'clip_' + _cvtRatio.replace(':', 'x') + '.zip', videoUrl: videoUrl, mode: 'single', ratio: _cvtRatio, clipIndex: clipIdx };
+
+            // Wait for backend to finish — poll history until Stage 3/3 Packaging done
+            var startedAt = Date.now();
+            var hasPackagingDone = false;
+            var hasConvertFailed = false;
+            var MAX_WAIT = 480000; // 8 min max
+            while (Date.now() - startedAt < MAX_WAIT) {
+                await new Promise(function(resolve) { setTimeout(resolve, 2500); });
+                await pollConvertStageHistory();
+                var hResp = await fetch('/api/progress/' + currentJobId + '/history', { cache: 'no-store' });
+                if (!hResp.ok) continue;
+                var hData = await hResp.json();
+                var hEvents = Array.isArray(hData && hData.events) ? hData.events : [];
+                hasPackagingDone = hEvents.some(function(evt) {
+                    var msg = String(evt && evt.message || '');
+                    return msg.indexOf('3/3 Packaging done') !== -1 || msg.indexOf('Stage 3/3 Packaging') !== -1;
+                });
+                hasConvertFailed = hEvents.some(function(evt) {
+                    var msg = String(evt && evt.message || '');
+                    return msg.indexOf('Convert failed') !== -1;
+                });
+                if (hasPackagingDone || hasConvertFailed) break;
+                if (detailEl) detailEl.textContent = '🎬 Backend proses convert clip ' + clip.clip_number + '...';
+            }
+            // Cancel the original fetch since we got our result from history
+            controller.abort();
+            if (hasConvertFailed) {
+                throw new Error('Convert failed on backend');
+            }
+            if (!hasPackagingDone) {
+                throw new Error('Convert timeout — backend tidak selesai dalam 8 menit');
+            }
+            // Recover artifact from backend memory
+            if (statusEl) statusEl.textContent = '📦 Backend selesai. Ambil hasil...';
+            var recoveredArtifact = null;
+            try {
+                recoveredArtifact = await tryRecoverConvertArtifact({
+                    jobId: currentJobId,
+                    mode: 'single',
+                    ratio: _cvtRatio,
+                    clipIndex: clipIdx,
+                    selectedIndices: [],
+                    maxAttempts: 20,
+                    delayMs: 1500
+                });
+            } catch(recErr) {
+                console.error('Recover single convert artifact failed:', recErr);
+            }
+            if (!recoveredArtifact || !recoveredArtifact.zipBase64) {
+                throw new Error('Gagal mengambil hasil convert dari backend');
+            }
+            _cvtLastVideoUrl = URL.createObjectURL(b64ToBlob(recoveredArtifact.zipBase64, 'application/zip'));
+            _cvtLastClipData = {
+                title: recoveredArtifact.title || clip.hook_title || '',
+                caption: recoveredArtifact.caption || clip.caption || '',
+                isZip: true,
+                filename: recoveredArtifact.zipFilename || ('clip_' + _cvtRatio.replace(':', 'x') + '.zip'),
+                videoUrl: recoveredArtifact.videoUrl || '',
+                mode: 'single',
+                ratio: _cvtRatio,
+                clipIndex: clipIdx
+            };
             setConvertGlobalHashtagsRaw('');
         }
 
