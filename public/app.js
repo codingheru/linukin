@@ -1126,12 +1126,22 @@ async function confirmConvertModal() {
 
             // Fire the request — don't await full response (may timeout through proxy)
             var allController = new AbortController();
-            fetch('/api/convert-ratio-all', {
+            var allFetchDone = false;
+            var allFetchHadError = false;
+            var allFetchPromise = fetch('/api/convert-ratio-all', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ jobId: currentJobId, ratio: _cvtRatio, selectedIndices: selectedIndices, clipEndExtendMap: buildClipEndExtendMap(selectedIndices), smartCrop: smartCrop, detectMode: detectMode, autoCaption: autoCaption, captionProvider: captionProvider, elevenLabsKey: elevenLabsKey, whisperModel: whisperModel }),
                 signal: allController.signal
-            }).catch(function() { /* fire-and-forget */ });
+            }).then(function(r) {
+                allFetchHadError = !r.ok;
+                allFetchDone = true;
+            }).catch(function(e) {
+                // AbortError is expected when we cancel after getting result from history
+                if (e && e.name === 'AbortError') return;
+                allFetchHadError = true;
+                allFetchDone = true;
+            });
 
             // Wait for backend to finish — poll history until Stage 3/3 Packaging done
             var startedAt = Date.now();
@@ -1156,7 +1166,9 @@ async function confirmConvertModal() {
                 if (hasPackagingDone || hasConvertFailed) break;
                 if (detailEl) detailEl.textContent = '🎬 Backend proses convert ' + selectedIndices.length + ' clips...';
             }
+            // Cancel the original fetch now that we got our result from history
             allController.abort();
+            console.log('[ALL CONVERT] Packaging done detected:', hasPackagingDone, '| Failed:', hasConvertFailed);
             if (hasConvertFailed) {
                 throw new Error('Convert failed on backend');
             }
@@ -1165,6 +1177,7 @@ async function confirmConvertModal() {
             }
             // Recover artifact from backend memory
             if (statusEl) statusEl.textContent = '📦 Backend selesai. Ambil hasil...';
+            console.log('[ALL CONVERT] Starting artifact recovery...');
             var recoveredArtifact = null;
             try {
                 recoveredArtifact = await tryRecoverConvertArtifact({
@@ -1176,12 +1189,15 @@ async function confirmConvertModal() {
                     maxAttempts: 20,
                     delayMs: 1500
                 });
+                console.log('[ALL CONVERT] Artifact recovered:', recoveredArtifact ? 'YES' : 'NULL', recoveredArtifact && recoveredArtifact.zipFilename);
             } catch(recErr) {
-                console.error('Recover all convert artifact failed:', recErr);
+                console.error('[ALL CONVERT] Recover failed:', recErr);
             }
             if (!recoveredArtifact || !recoveredArtifact.zipBase64) {
+                console.error('[ALL CONVERT] Artifact empty, throwing...');
                 throw new Error('Gagal mengambil hasil convert dari backend');
             }
+            console.log('[ALL CONVERT] Building download URL...');
             _cvtLastVideoUrl = URL.createObjectURL(b64ToBlob(recoveredArtifact.zipBase64, 'application/zip'));
             _cvtLastClipData = {
                 title: 'All Clips (' + _cvtRatio + ')',
@@ -1194,6 +1210,7 @@ async function confirmConvertModal() {
                 selectedIndices: selectedIndices,
                 clips: selectedClips
             };
+            console.log('[ALL CONVERT] About to show success modal. _cvtLastClipData:', _cvtLastClipData);
             setConvertGlobalHashtagsRaw('');
         } else {
             // Convert single clip — fire request without waiting for full response
@@ -1244,6 +1261,7 @@ async function confirmConvertModal() {
             }
             // Cancel the original fetch since we got our result from history
             controller.abort();
+            console.log('[SINGLE CONVERT] Packaging done detected:', hasPackagingDone, '| Failed:', hasConvertFailed);
             if (hasConvertFailed) {
                 throw new Error('Convert failed on backend');
             }
@@ -1252,6 +1270,7 @@ async function confirmConvertModal() {
             }
             // Recover artifact from backend memory
             if (statusEl) statusEl.textContent = '📦 Backend selesai. Ambil hasil...';
+            console.log('[SINGLE CONVERT] Starting artifact recovery...');
             var recoveredArtifact = null;
             try {
                 recoveredArtifact = await tryRecoverConvertArtifact({
@@ -1263,12 +1282,15 @@ async function confirmConvertModal() {
                     maxAttempts: 20,
                     delayMs: 1500
                 });
+                console.log('[SINGLE CONVERT] Artifact recovered:', recoveredArtifact ? 'YES' : 'NULL', recoveredArtifact && recoveredArtifact.zipFilename);
             } catch(recErr) {
-                console.error('Recover single convert artifact failed:', recErr);
+                console.error('[SINGLE CONVERT] Recover failed:', recErr);
             }
             if (!recoveredArtifact || !recoveredArtifact.zipBase64) {
+                console.error('[SINGLE CONVERT] Artifact empty, throwing...');
                 throw new Error('Gagal mengambil hasil convert dari backend');
             }
+            console.log('[SINGLE CONVERT] Building download URL...');
             _cvtLastVideoUrl = URL.createObjectURL(b64ToBlob(recoveredArtifact.zipBase64, 'application/zip'));
             _cvtLastClipData = {
                 title: recoveredArtifact.title || clip.hook_title || '',
@@ -1280,6 +1302,7 @@ async function confirmConvertModal() {
                 ratio: _cvtRatio,
                 clipIndex: clipIdx
             };
+            console.log('[SINGLE CONVERT] About to show success modal. _cvtLastClipData:', _cvtLastClipData);
             setConvertGlobalHashtagsRaw('');
         }
 
