@@ -1,38 +1,3 @@
 node_modules/
-bin/
-
-# Secrets and local auth
 client_secret.json
 token.json
-cookies.txt
-.env
-.env.*
-
-# Python cache and virtualenvs
-__pycache__/
-*.pyc
-.venv/
-venv/
-env/
-
-# Runtime/generated app data
-uploads/*
-!uploads/.gitkeep
-downloads/*
-!downloads/.gitkeep
-output/*
-!output/.gitkeep
-processed/
-history/*
-!history/.gitkeep
-*.log
-????????-????-????-????-????????????.txt
-
-# OS/editor
-.DS_Store
-Thumbs.db
-.vscode/
-.idea/
-
-# Local backups
-*.bak

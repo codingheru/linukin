@@ -301,21 +301,39 @@ function parseClipsFromAIResponse(aiContent) {
     const raw = String(aiContent || '').trim();
     if (!raw) throw new Error('AI response kosong');
 
+    const normalized = stripCodeFences(raw);
     const attempts = [];
-    attempts.push(raw);
-    attempts.push(stripCodeFences(raw));
+    const seen = new Set();
+    const pushAttempt = (value) => {
+        const candidate = String(value || '').trim();
+        if (!candidate || seen.has(candidate)) return;
+        seen.add(candidate);
+        attempts.push(candidate);
+    };
 
-    const extracted = extractBalancedJSONArray(stripCodeFences(raw));
-    if (extracted) attempts.push(extracted);
+    pushAttempt(raw);
+    pushAttempt(normalized);
 
-    const repaired = repairJsonLikeArray(extracted || stripCodeFences(raw));
-    if (repaired) attempts.push(repaired);
+    const arrayExtracted = extractBalancedJSONArray(normalized);
+    if (arrayExtracted) {
+        pushAttempt(arrayExtracted);
+        pushAttempt(repairJsonLikeArray(arrayExtracted));
+    }
 
-    const objectExtracted = extractBalancedJSONObject(stripCodeFences(raw));
-    if (objectExtracted) attempts.push(objectExtracted, repairJsonLikeArray(objectExtracted));
+    const objectExtracted = extractBalancedJSONObject(normalized);
+    if (objectExtracted) {
+        pushAttempt(objectExtracted);
+        pushAttempt(repairJsonLikeArray(objectExtracted));
+    }
+
+    const firstBracket = normalized.search(/[\[{]/);
+    if (firstBracket >= 0) {
+        const tail = normalized.slice(firstBracket);
+        pushAttempt(tail);
+        pushAttempt(repairJsonLikeArray(tail));
+    }
 
     for (const candidate of attempts) {
-        if (!candidate) continue;
         try {
             const parsed = JSON.parse(candidate);
             if (Array.isArray(parsed)) return parsed;
@@ -329,7 +347,7 @@ function parseClipsFromAIResponse(aiContent) {
         } catch (e) { }
     }
 
-    throw new Error('Gagal parse AI response');
+    throw new Error(`Gagal parse AI response: ${raw.slice(0, 240)}`);
 }
 
 function buildClipsFromMetadata(videoInfo, videoDuration, minDur, maxDur, numClips, analysisStartOffset = 0) {
@@ -1179,7 +1197,13 @@ async function runAnalyzeJob({ jobId, youtubeUrl, baseUrl, apiKey, model, minDur
         }
         const aiResponse = await fetchJSON(targetAiUrl, {
             method: 'POST', headers: aiHeaders,
-            body: JSON.stringify({ model: selectedModel, messages: [{ role: 'system', content: aiSystemPrompt }, { role: 'user', content: aiPrompt }], temperature: 0.2, max_tokens: 6000 })
+            body: JSON.stringify({
+                model: selectedModel,
+                messages: [{ role: 'system', content: aiSystemPrompt }, { role: 'user', content: aiPrompt }],
+                temperature: 0,
+                max_tokens: 8000,
+                response_format: { type: 'json_object' }
+            })
         });
         if (aiResponse.status !== 200) throw new Error(`AI API error: ${JSON.stringify(aiResponse.data)}`);
         console.log(`${logPrefix} 🤖 AI response received`);
