@@ -1044,7 +1044,7 @@ async function confirmConvertModal() {
         convertStageSeen.add(key);
         var step = String(m.step || '');
         var msg = String(m.message || '');
-        if (step === 'convert_stage' || step.indexOf('convert_') === 0 || step === 'cutting' || step === 'packaging' || step === 'done' || step === 'error') {
+        if (step === 'convert_stage' || step.indexOf('convert_') === 0 || step === 'cutting' || step === 'packaging' || step === 'finalize' || step === 'prepare' || step === 'done' || step === 'error') {
             if (msg) appendConvertStage(msg);
             var detailEl = document.getElementById('convertLoadingDetail');
             if (detailEl && msg) detailEl.textContent = msg;
@@ -1239,7 +1239,7 @@ async function confirmConvertModal() {
                 });
                 hasPackagingDone = hEvents.some(function(evt) {
                     var msg = String(evt && evt.message || '');
-                    return msg.indexOf('3/3 Packaging done') !== -1 || msg.indexOf('Stage 3/3 Packaging') !== -1 || msg.indexOf('Convert selesai') !== -1;
+                    return msg.indexOf('Stage 3/3 Packaging done') !== -1 || msg.indexOf('Stage 2/3 Finalize done') !== -1 || msg.indexOf('Stage 1/3 Prepare Smart Crop done') !== -1 || msg.indexOf('Convert selesai') !== -1;
                 });
                 hasConvertFailed = hEvents.some(function(evt) {
                     var msg = String(evt && evt.message || '');
