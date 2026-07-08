@@ -537,7 +537,9 @@ if (bulkForm) bulkForm.addEventListener('submit', async function (e) {
     document.getElementById('bulkFormCard').classList.add('hidden');
     document.getElementById('bulkProgressCard').classList.remove('hidden');
     document.getElementById('bulkResultCard').classList.add('hidden');
-    document.getElementById('bulkProgressLog').innerHTML = '';
+    var bulkLogEl = document.getElementById('bulkProgressLog');
+    if (bulkLogEl) bulkLogEl.innerHTML = '';
+    bulkLog('Bulk request dikirim ke backend...', 'info');
 
     try {
         var r = await fetch('/api/analyze-bulk', {
@@ -557,15 +559,18 @@ if (bulkForm) bulkForm.addEventListener('submit', async function (e) {
         var data = await r.json();
         if (!r.ok) throw new Error(data.error || 'Bulk analyze gagal');
         var es = new EventSource('/api/progress/' + data.jobId);
+        es.onopen = function () { bulkLog('SSE progress tersambung', 'info'); };
+        es.onerror = function () { bulkLog('SSE progress putus / reconnect', 'error'); };
         es.onmessage = function (ev) {
             var m = JSON.parse(ev.data);
+            console.log('[BULK_PROGRESS]', m);
             if (m.progress >= 0) {
                 document.getElementById('bulkProgressBar').style.width = m.progress + '%';
                 document.getElementById('bulkProgressPercent').textContent = m.progress + '%';
             }
+            bulkLog((m.step ? '[' + m.step + '] ' : '') + (m.message || '(no message)'), m.step && m.step.indexOf('error') >= 0 ? 'error' : (m.step === 'done' ? 'done' : 'info'));
             if (m.message) {
                 document.getElementById('bulkProgressSubtitle').textContent = m.message;
-                bulkLog(m.message, m.step && m.step.indexOf('error') >= 0 ? 'error' : (m.step === 'done' ? 'done' : 'info'));
             }
             if (m.step === 'connected') {
                 document.getElementById('bulkProgressSubtitle').textContent = 'Menunggu proses bulk dimulai...';
