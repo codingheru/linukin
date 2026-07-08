@@ -1158,6 +1158,7 @@ async function runAnalyzeJob({ jobId, youtubeUrl, baseUrl, apiKey, model, minDur
             '',
             'OUTPUT WAJIB:',
             '- Kembalikan JSON ARRAY SAJA. Tanpa markdown. Tanpa penjelasan tambahan.',
+            '- Jangan tulis teks pembuka, teks penutup, komentar, atau penjelasan di luar JSON.',
             '- Urutkan dari segmen paling kuat ke segmen berikutnya.',
             '- Jika segmen tidak cukup kuat, lebih baik hasil lebih sedikit daripada memaksa clip lemah.',
             '',
@@ -1202,7 +1203,7 @@ async function runAnalyzeJob({ jobId, youtubeUrl, baseUrl, apiKey, model, minDur
                 messages: [{ role: 'system', content: aiSystemPrompt }, { role: 'user', content: aiPrompt }],
                 temperature: 0,
                 max_tokens: 8000,
-                response_format: { type: 'json_object' }
+                response_format: { type: 'json_array' }
             })
         });
         if (aiResponse.status !== 200) throw new Error(`AI API error: ${JSON.stringify(aiResponse.data)}`);
