@@ -1038,14 +1038,16 @@ async function confirmConvertModal() {
         logEl.scrollTop = logEl.scrollHeight;
     }
     function applyConvertStageEvent(m) {
-        if (!m || !m.message) return;
-        var key = [m._ts || '', m.step || '', m.message].join('|');
+        if (!m) return;
+        var key = [m._ts || '', m.step || '', m.message || '', m.progress != null ? m.progress : ''].join('|');
         if (convertStageSeen.has(key)) return;
         convertStageSeen.add(key);
-        if (m.step === 'convert_stage' || String(m.step || '').startsWith('convert_') || m.step === 'error') {
-            appendConvertStage(m.message);
+        var step = String(m.step || '');
+        var msg = String(m.message || '');
+        if (step === 'convert_stage' || step.indexOf('convert_') === 0 || step === 'cutting' || step === 'packaging' || step === 'done' || step === 'error') {
+            if (msg) appendConvertStage(msg);
             var detailEl = document.getElementById('convertLoadingDetail');
-            if (detailEl) detailEl.textContent = m.message;
+            if (detailEl && msg) detailEl.textContent = msg;
         }
     }
     function setConvertOverlayError(message) {
@@ -1232,14 +1234,18 @@ async function confirmConvertModal() {
                 if (!hResp.ok) continue;
                 var hData = await hResp.json();
                 var hEvents = Array.isArray(hData && hData.events) ? hData.events : [];
+                var finalEvt = hEvents.slice().reverse().find(function (evt) {
+                    return evt && (evt.step === 'done' || evt.step === 'error' || String(evt.message || '').indexOf('done') !== -1 || String(evt.message || '').indexOf('failed') !== -1);
+                });
                 hasPackagingDone = hEvents.some(function(evt) {
                     var msg = String(evt && evt.message || '');
-                    return msg.indexOf('3/3 Packaging done') !== -1 || msg.indexOf('Stage 3/3 Packaging') !== -1;
+                    return msg.indexOf('3/3 Packaging done') !== -1 || msg.indexOf('Stage 3/3 Packaging') !== -1 || msg.indexOf('Convert selesai') !== -1;
                 });
                 hasConvertFailed = hEvents.some(function(evt) {
                     var msg = String(evt && evt.message || '');
-                    return msg.indexOf('Convert failed') !== -1;
+                    return msg.indexOf('Convert failed') !== -1 || evt.step === 'error';
                 });
+                if (finalEvt && finalEvt.step === 'done') hasPackagingDone = true;
                 if (hasPackagingDone || hasConvertFailed) break;
                 if (detailEl) detailEl.textContent = '🎬 Backend proses convert clip ' + clip.clip_number + '...';
             }
@@ -1337,13 +1343,17 @@ async function confirmConvertModal() {
             if (!historyResp.ok) continue;
             var historyData = await historyResp.json();
             var historyEvents = Array.isArray(historyData && historyData.events) ? historyData.events : [];
+            var finalEvt = historyEvents.slice().reverse().find(function (evt) {
+                return evt && (evt.step === 'done' || evt.step === 'error' || String(evt.message || '').indexOf('done') !== -1 || String(evt.message || '').indexOf('failed') !== -1);
+            });
             var hasPackagingDone = historyEvents.some(function (evt) {
                 var msg = String(evt && evt.message || '');
-                return msg.indexOf('3/3 Packaging done') !== -1 || msg.indexOf('Stage 3/3 Packaging') !== -1;
+                return msg.indexOf('3/3 Packaging done') !== -1 || msg.indexOf('Stage 3/3 Packaging') !== -1 || msg.indexOf('Convert selesai') !== -1;
             });
+            if (finalEvt && finalEvt.step === 'done') hasPackagingDone = true;
             hasHardFailure = historyEvents.some(function (evt) {
                 var msg = String(evt && evt.message || '');
-                return msg.indexOf('Convert failed') !== -1;
+                return msg.indexOf('Convert failed') !== -1 || evt.step === 'error';
             });
             if (hasPackagingDone) {
                 if (statusErrorEl) statusErrorEl.textContent = '📦 Backend selesai packaging. Ambil hasil...';
