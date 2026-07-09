@@ -2206,3 +2206,33 @@ router.post('/api/convert-ratio-all', async (req, res) => {
 });
 
 module.exports = router;
+
+router.get('/api/output-files', (req, res) => {
+    try {
+        const outputDir = path.join(__dirname, '..', 'output');
+        if (!fs.existsSync(outputDir)) return res.json({ success: true, path: outputDir, files: [] });
+        const files = fs.readdirSync(outputDir)
+            .filter(name => /\.(mp4|mov|mkv|webm|zip)$/i.test(name))
+            .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+            .map(name => ({
+                filename: name,
+                url: '/output/' + encodeURIComponent(name)
+            }));
+        res.json({ success: true, path: outputDir, files });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+router.get('/api/open-output-folder', (req, res) => {
+    try {
+        const outputDir = path.join(__dirname, '..', 'output');
+        const { exec } = require('child_process');
+        if (process.platform === 'win32') {
+            exec(`explorer "${outputDir}"`);
+        }
+        res.redirect('/output.html');
+    } catch (err) {
+        res.status(500).send(err.message);
+    }
+});

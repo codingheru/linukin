@@ -3835,51 +3835,84 @@ function getConvertOutputItems() {
 }
 
 function updateOutputManagerView() {
-    var list = document.getElementById('convertOutputList');
-    if (!list) return;
+    var page = document.getElementById('outputPage');
+    if (!page) return;
+    var list = document.getElementById('outputFileList');
     var items = getConvertOutputItems();
+    var selected = items.filter(function (item) { return item.selected !== false; });
+    var dirInfo = document.getElementById('outputDirInfo');
+    if (dirInfo) dirInfo.textContent = 'Folder output aktif: output';
+    if (!list) return;
     if (!items.length) {
-        list.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:20px;color:var(--text-muted);border:1px dashed var(--border-subtle);border-radius:12px;">Belum ada output convert.</div>';
+        list.innerHTML = '<div style="padding:16px;color:var(--text-muted);border:1px dashed var(--border-subtle);border-radius:12px;">Belum ada file di output.</div>';
         return;
     }
     list.innerHTML = items.map(function (item, idx) {
         var checked = item.selected === false ? '' : 'checked';
-        return '<label style="display:flex;gap:10px;align-items:flex-start;padding:12px;border:1px solid var(--border-subtle);border-radius:12px;background:rgba(10,12,20,0.55);">' +
+        return '<label style="display:flex;gap:12px;align-items:flex-start;padding:12px;border:1px solid var(--border-subtle);border-radius:12px;background:rgba(10,12,20,0.55);margin-bottom:10px;">' +
             '<input type="checkbox" data-output-index="' + idx + '" ' + checked + ' onchange="toggleConvertOutputSelection(' + idx + ', this.checked)">' +
             '<div style="min-width:0;flex:1;">' +
             '<div style="font-weight:700;">' + escapeHtml(item.filename || ('output-' + (idx + 1))) + '</div>' +
             '<div style="font-size:0.8rem;color:var(--text-muted);word-break:break-word;">' + escapeHtml(item.caption || item.title || '') + '</div>' +
-            '</div></label>';
+            '</div>' +
+            '<button class="btn-secondary" type="button" onclick="openOutputFile(' + idx + ')" style="padding:8px 10px;white-space:nowrap;">Buka</button>' +
+            '</label>';
     }).join('');
+    var count = document.getElementById('outputSelectedCount');
+    if (count) count.textContent = selected.length + ' terpilih';
+}
+
+function refreshConvertOutputList() {
+    loadOutputDirectory();
 }
 
 function toggleConvertOutputSelection(idx, checked) {
     if (!_cvtOutputItems || !_cvtOutputItems[idx]) return;
     _cvtOutputItems[idx].selected = !!checked;
+    updateOutputManagerView();
+}
+
+async function loadOutputDirectory() {
+    try {
+        var res = await fetch('/api/output-files');
+        var data = await res.json();
+        _cvtOutputItems = (data.files || []).map(function (item, idx) {
+            if (typeof item === 'string') return { index: idx, filename: item, selected: true };
+            return Object.assign({ index: idx, selected: true }, item || {});
+        });
+        updateOutputManagerView();
+    } catch (err) {
+        console.error(err);
+    }
 }
 
 function openConvertOutputFolder() {
-    alert('Folder output harus dibuka dari file explorer/server path lokal. Jika backend expose path, gue sambungin tombol ini ke endpoint itu.');
+    window.location.href = '/api/open-output-folder';
+}
+
+function openOutputFile(idx) {
+    var item = _cvtOutputItems && _cvtOutputItems[idx];
+    if (!item) return;
+    var url = item.url || ('/output/' + encodeURIComponent(item.filename || ''));
+    window.open(url, '_blank');
 }
 
 async function downloadSelectedConvertOutputs() {
-    alert('Download ZIP untuk batch output belum ada endpoint khusus. Tombol ini bakal gue sambungin ke artifact convert berikutnya.');
+    var selected = getConvertOutputItems().filter(function (item) { return item.selected !== false; });
+    if (!selected.length) return alert('Pilih output dulu');
+    if (selected.length === 1 && selected[0].url) return window.open(selected[0].url, '_blank');
+    var ids = selected.map(function (item) { return encodeURIComponent(item.filename || ''); }).join(',');
+    window.open('/api/download-selected-zip?files=' + ids, '_blank');
 }
 
 async function sendSelectedConvertOutputsToRepliz() {
     var selected = getConvertOutputItems().filter(function (item) { return item.selected !== false; });
-    if (!selected.length) {
-        alert('Pilih output dulu');
-        return;
-    }
-    alert('Batch Repliz perlu endpoint upload multi-file. State UI sudah siap, backend route masih perlu disambung.');
+    if (!selected.length) return alert('Pilih output dulu');
+    alert('Route Repliz batch belum disambung. File UI sudah ke-list dari output folder.');
 }
 
 async function saveSelectedConvertOutputsToTable() {
     var selected = getConvertOutputItems().filter(function (item) { return item.selected !== false; });
-    if (!selected.length) {
-        alert('Pilih output dulu');
-        return;
-    }
-    alert('Batch simpan ke tabel perlu mapping output item ke row backend. State UI sudah siap, route masih perlu disambung.');
+    if (!selected.length) return alert('Pilih output dulu');
+    alert('Route simpan ke tabel belum disambung. File UI sudah ke-list dari output folder.');
 }

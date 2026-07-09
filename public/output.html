@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Video Tools — Output</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="bg-effects">
+    <div class="bg-orb bg-orb-1"></div>
+    <div class="bg-orb bg-orb-2"></div>
+    <div class="bg-orb bg-orb-3"></div>
+  </div>
+
+  <header class="app-header">
+    <div class="app-logo">
+      <div class="logo-icon">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <polygon points="23 7 16 12 23 17 23 7"></polygon>
+          <rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
+        </svg>
+      </div>
+      <div class="logo-text">
+        <h1>Video<span>Tools</span></h1>
+        <p>Output Manager</p>
+      </div>
+    </div>
+  </header>
+
+  <nav class="tab-nav">
+    <a class="tab-btn" href="index.html" style="text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:8px;">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"></path>
+      </svg>
+      Home
+    </a>
+    <a class="tab-btn active" href="output.html" style="text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:8px;">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+        <path d="M7 10l5 5 5-5"></path>
+        <path d="M12 15V3"></path>
+      </svg>
+      Output
+    </a>
+    <a class="tab-btn" href="tabel-share-video.html" style="text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:8px;">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <rect x="3" y="4" width="18" height="16" rx="2"></rect>
+        <line x1="3" y1="10" x2="21" y2="10"></line>
+        <line x1="9" y1="10" x2="9" y2="20"></line>
+        <line x1="15" y1="10" x2="15" y2="20"></line>
+      </svg>
+      Tabel
+    </a>
+  </nav>
+
+  <main class="yt-container" style="max-width:1280px;margin:0 auto;padding:0 16px 24px;">
+    <section class="card" style="padding:18px;">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;">
+        <div>
+          <div class="step-badge">📦</div>
+          <h2 style="margin:10px 0 6px;font-size:1.15rem;">Folder Output</h2>
+          <p id="outputDirInfo" style="margin:0;color:var(--text-muted);">Nge-load isi folder output.</p>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn-secondary" type="button" onclick="refreshOutputFiles()">↻ Refresh</button>
+          <button class="btn-secondary" type="button" onclick="openOutputFolder()">📂 Buka Folder</button>
+        </div>
+      </div>
+
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:14px;flex-wrap:wrap;">
+        <label style="display:flex;align-items:center;gap:10px;color:var(--text-muted);font-size:0.85rem;">
+          <input id="outputSelectAll" type="checkbox" onchange="toggleSelectAllOutputs(this.checked)">
+          Pilih semua
+        </label>
+        <div id="outputSelectedCount" style="color:var(--text-muted);font-size:0.85rem;">0 terpilih</div>
+      </div>
+
+      <div id="outputFileList" style="margin-top:14px;"></div>
+
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;">
+        <button class="btn-primary" type="button" onclick="downloadSelectedOutputs()">⬇ Download ZIP</button>
+        <button class="btn-secondary" type="button" onclick="sendSelectedOutputsToRepliz()">🚀 Repliz</button>
+        <button class="btn-secondary" type="button" onclick="saveSelectedOutputsToTable()">🗂 Simpan ke Tabel</button>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    let outputFiles = [];
+    async function loadOutputFiles() {
+      const list = document.getElementById('outputFileList');
+      const count = document.getElementById('outputSelectedCount');
+      const info = document.getElementById('outputDirInfo');
+      try {
+        const res = await fetch('/api/output-files');
+        const data = await res.json();
+        outputFiles = Array.isArray(data.files) ? data.files.map((item, index) => ({
+          index,
+          filename: typeof item === 'string' ? item : (item.filename || item.name || ''),
+          url: typeof item === 'object' && item ? item.url : '',
+          selected: true
+        })) : [];
+        if (info) info.textContent = data.path ? 'Folder output: ' + data.path : 'Folder output aktif';
+        renderOutputFiles();
+      } catch (err) {
+        if (list) list.innerHTML = '<div style="padding:16px;color:var(--text-muted);border:1px dashed var(--border-subtle);border-radius:12px;">Gagal load output.</div>';
+        if (info) info.textContent = 'Gagal load isi folder output';
+        if (count) count.textContent = '0 terpilih';
+      }
+    }
+
+    function renderOutputFiles() {
+      const list = document.getElementById('outputFileList');
+      const count = document.getElementById('outputSelectedCount');
+      const selectedCount = outputFiles.filter(f => f.selected !== false).length;
+      if (count) count.textContent = selectedCount + ' terpilih';
+      if (!list) return;
+      if (!outputFiles.length) {
+        list.innerHTML = '<div style="padding:16px;color:var(--text-muted);border:1px dashed var(--border-subtle);border-radius:12px;">Folder output kosong.</div>';
+        return;
+      }
+      list.innerHTML = outputFiles.map((file, index) => `
+        <label style="display:flex;gap:12px;align-items:flex-start;padding:12px;border:1px solid var(--border-subtle);border-radius:12px;background:rgba(10,12,20,0.55);margin-bottom:10px;">
+          <input type="checkbox" ${file.selected !== false ? 'checked' : ''} onchange="outputFiles[${index}].selected=this.checked;renderOutputFiles();">
+          <div style="min-width:0;flex:1;">
+            <div style="font-weight:700;word-break:break-word;">${escapeHtml(file.filename || ('output-' + (index + 1)))}</div>
+          </div>
+          <button class="btn-secondary" type="button" onclick="openOutputItem(${index})" style="padding:8px 10px;white-space:nowrap;">Buka</button>
+        </label>
+      `).join('');
+    }
+
+    function toggleSelectAllOutputs(checked) {
+      outputFiles = outputFiles.map(file => ({ ...file, selected: !!checked }));
+      renderOutputFiles();
+    }
+
+    function refreshOutputFiles() {
+      loadOutputFiles();
+    }
+
+    function openOutputFolder() {
+      window.location.href = '/api/open-output-folder';
+    }
+
+    function openOutputItem(index) {
+      const file = outputFiles[index];
+      if (!file) return;
+      if (file.url) {
+        window.open(file.url, '_blank');
+        return;
+      }
+      window.open('/output/' + encodeURIComponent(file.filename), '_blank');
+    }
+
+    function selectedOutputFiles() {
+      return outputFiles.filter(file => file.selected !== false);
+    }
+
+    window.escapeHtml = window.escapeHtml || function (value) {
+      return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    };
+
+    function downloadSelectedOutputs() {
+      const files = selectedOutputFiles();
+      if (!files.length) return alert('Pilih output dulu');
+      const query = files.map(file => encodeURIComponent(file.filename)).join(',');
+      window.open('/api/download-selected-zip?files=' + query, '_blank');
+    }
+
+    function sendSelectedOutputsToRepliz() {
+      alert('Route Repliz batch belum disambung');
+    }
+
+    function saveSelectedOutputsToTable() {
+      alert('Route simpan ke tabel belum disambung');
+    }
+
+    loadOutputFiles();
+  </script>
+</body>
+</html>
+</body>
+</html>

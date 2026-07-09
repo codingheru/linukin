@@ -83,7 +83,7 @@
       </svg>
       Zernio
     </button>
-    <a class="tab-btn" id="tabBtnOutput" href="#output-manager" style="text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:8px;">
+    <a class="tab-btn" id="tabBtnOutput" href="output.html" style="text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:8px;">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
         <path d="M7 10l5 5 5-5"></path>
@@ -101,41 +101,6 @@
       Tabel
     </a>
   </nav>
-
-  <main id="output-manager" class="yt-container" style="display:block;max-width:1280px;margin:0 auto 24px;padding:0 16px;">
-    <section class="card" style="margin-bottom:16px;">
-      <div class="card-header" style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;">
-        <div>
-          <div class="step-badge">📦</div>
-          <h2 style="margin:10px 0 6px;font-size:1.15rem;">Output Manager</h2>
-          <p style="margin:0;color:var(--text-muted);max-width:760px;">Cek hasil convert, pilih banyak file, buka folder output, download ZIP, kirim ke Repliz, atau simpan ke tabel.</p>
-        </div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;">
-          <button class="btn-secondary" type="button" onclick="openConvertOutputFolder()">📂 Buka Folder Output</button>
-          <button class="btn-secondary" type="button" onclick="refreshConvertOutputList()">↻ Refresh</button>
-        </div>
-      </div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;margin-top:14px;">
-        <label style="display:flex;flex-direction:column;gap:6px;font-size:0.82rem;color:var(--text-muted);">
-          Global Hashtags
-          <input id="convertGlobalHashtagsNav" type="text" placeholder="#fyp #viral #podcast" style="padding:10px 12px;border-radius:10px;border:1px solid var(--border-subtle);background:rgba(10,12,20,0.75);color:var(--text-primary);font:inherit;">
-        </label>
-        <label style="display:flex;flex-direction:column;gap:6px;font-size:0.82rem;color:var(--text-muted);">
-          Pilih Output
-          <select id="convertOutputFilter" style="padding:10px 12px;border-radius:10px;border:1px solid var(--border-subtle);background:rgba(10,12,20,0.75);color:var(--text-primary);font:inherit;">
-            <option value="all">Semua</option>
-            <option value="selected">Terpilih</option>
-          </select>
-        </label>
-      </div>
-      <div id="convertOutputList" style="margin-top:14px;display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;"></div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;">
-        <button class="btn-primary" type="button" onclick="downloadSelectedConvertOutputs()">⬇ Download ZIP</button>
-        <button class="btn-secondary" type="button" onclick="sendSelectedConvertOutputsToRepliz()">🚀 Repliz</button>
-        <button class="btn-secondary" type="button" onclick="saveSelectedConvertOutputsToTable()">🗂 Simpan ke Tabel</button>
-      </div>
-    </section>
-  </main>
 
   <!-- History Panel (slides in from right) -->
   <div id="historyPanel"
