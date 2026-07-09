@@ -1912,8 +1912,8 @@ router.post('/api/convert-ratio', async (req, res) => {
         const duration = preparedClip.duration || clip.duration || 30;
         const detectMode = req.body.detectMode || 'balanced';
         const totalStarted = Date.now();
-        logConvertStage(jobId, `🎬 [Single] Stage 1/3 Smart Crop start (clip ${clip.clip_number})`);
-        console.log(`⏱ Stage 1/3 Smart Crop start | clip=${clip.clip_number} | mode=${detectMode} | ratio=${ratio}`);
+        logConvertStage(jobId, `🎬 [Single] Stage 1/3 Prepare Smart Crop start (clip ${clip.clip_number})`);
+        console.log(`⏱ Stage 1/3 Prepare Smart Crop start | clip=${clip.clip_number} | mode=${detectMode} | ratio=${ratio}`);
         const smartCropStarted = Date.now();
         if (req.body.smartCrop === true && isFaceDetectionReady()) {
             await renderFaceCropLikeApp(videoPath, outputPath, tmpDir, targetDim.w, targetDim.h, detectMode);
@@ -1944,16 +1944,16 @@ router.post('/api/convert-ratio', async (req, res) => {
         if (segments.length > 1) { const cl = path.join(tmpDir, 'concat.txt'); fs.writeFileSync(cl, segFiles.map(f => `file '${f.replace(/\\\\/g, '/')}'`).join('\n')); await runCommand(FFMPEG_PATH, ['-y', '-f', 'concat', '-safe', '0', '-i', cl, '-c', 'copy', outputPath], tmpDir); }
         else fs.copyFileSync(segFiles[0], outputPath);
         }
-        console.log(`⏱ Stage 1/3 Smart Crop done in ${((Date.now() - smartCropStarted) / 1000).toFixed(1)}s`);
-        logConvertStage(jobId, `✅ [Single] Stage 1/3 Smart Crop done`);
+        console.log(`⏱ Stage 1/3 Prepare Smart Crop done in ${((Date.now() - smartCropStarted) / 1000).toFixed(1)}s`);
+        logConvertStage(jobId, `✅ [Single] Stage 1/3 Prepare Smart Crop done`);
 
         const composedPath = path.join(tmpDir, `composed_${Date.now()}.mp4`);
 
         // === AUTO CAPTION (ElevenLabs STT) ===
         const captionProvider = req.body.captionProvider === 'whisper' ? 'whisper' : 'elevenlabs';
         const canCaption = req.body.autoCaption === true && (captionProvider === 'whisper' || !!req.body.elevenLabsKey);
-        logConvertStage(jobId, `🎙 [Single] Stage 2/3 Auto Caption ${canCaption ? `start (${captionProvider})` : 'skip'}`);
-        console.log(`⏱ Stage 2/3 Auto Caption ${canCaption ? `start (${captionProvider})` : 'skip'}`);
+        logConvertStage(jobId, `🎙 [Single] Stage 2/3 Finalize ${canCaption ? `start (${captionProvider})` : 'skip'}`);
+        console.log(`⏱ Stage 2/3 Finalize ${canCaption ? `start (${captionProvider})` : 'skip'}`);
         const captionStarted = Date.now();
         let assPath = null;
         if (canCaption) {
@@ -1964,12 +1964,12 @@ router.post('/api/convert-ratio', async (req, res) => {
         await composeCropWatermarkCaption(outputPath, composedPath, tmpDir, targetDim.w, assPath);
         fs.copyFileSync(composedPath, outputPath);
         console.log('🏷+🎙 Compose done (crop+watermark+caption in single encode)');
-        console.log(`⏱ Stage 2/3 Auto Caption done in ${((Date.now() - captionStarted) / 1000).toFixed(1)}s`);
-        logConvertStage(jobId, `✅ [Single] Stage 2/3 Auto Caption done`);
+        console.log(`⏱ Stage 2/3 Finalize done in ${((Date.now() - captionStarted) / 1000).toFixed(1)}s`);
+        logConvertStage(jobId, `✅ [Single] Stage 2/3 Finalize done`);
 
         const clipNum = String(clip.clip_number).padStart(2, '0');
         logConvertStage(jobId, `📦 [Single] Stage 3/3 Packaging start`);
-        console.log('⏱ Stage 3/3 Output packaging start');
+        console.log('⏱ Stage 3/3 Packaging start');
         const outputStarted = Date.now();
         // Buffer ZIP for Content-Length (IDM fix)
         const archive = archiver('zip', { zlib: { level: 5 } });
@@ -1997,7 +1997,7 @@ router.post('/api/convert-ratio', async (req, res) => {
         res.setHeader('X-Video-Url', `/output/${outputFilename}`);
         res.setHeader('Access-Control-Expose-Headers', 'X-Video-Url');
         res.end(buffer);
-        console.log(`⏱ Stage 3/3 Output packaging done in ${((Date.now() - outputStarted) / 1000).toFixed(1)}s`);
+        console.log(`⏱ Stage 3/3 Packaging done in ${((Date.now() - outputStarted) / 1000).toFixed(1)}s`);
         console.log(`⏱ Total convert time ${((Date.now() - totalStarted) / 1000).toFixed(1)}s`);
         logConvertStage(jobId, `✅ [Single] Stage 3/3 Packaging done`);
         setTimeout(() => {
@@ -2031,11 +2031,10 @@ router.post('/api/convert-ratio-all', async (req, res) => {
             ? selectedIndices.map(i => ({ clip: job.results[i], originalIndex: i })).filter(entry => !!entry.clip)
             : job.results.map((clip, i) => ({ clip, originalIndex: i }));
         const convertedFiles = [];
-        const stage1Prepared = [];
         logConvertStage(jobId, `🎬 convert-ratio-all mode: staged-parallel | ratio=${ratio} | workers=${CONVERT_WORKERS} | clips=${sourceResults.length}`);
-        logConvertStage(jobId, `🎬 [All] Stage 1/3 Prepare Smart Crop start (${sourceResults.length} clip)`);
-        for (let idx = 0; idx < sourceResults.length; idx++) {
-            const entry = sourceResults[idx];
+        logConvertStage(jobId, `🎬 [All] Stage 1/3 Prepare Smart Crop start (${sourceResults.length} clips)`);
+
+        const stage1Prepared = await Promise.all(sourceResults.map((entry, idx) => (async () => {
             const clip = entry.clip;
             const outputFilename = clip.filename.replace('.mp4', `_${ratioTag}.mp4`);
             const outputPath = path.join(OUTPUT_DIR, outputFilename);
@@ -2043,22 +2042,20 @@ router.post('/api/convert-ratio-all', async (req, res) => {
             const clipTmpDir = path.join(tmpDir, `clip_${idx}`);
             fs.mkdirSync(clipTmpDir, { recursive: true });
             try {
+                logConvertStage(jobId, `🎬 [prepare ${idx + 1}/${sourceResults.length}] start | clip=${clip.clip_number}`);
                 const preparedClip = await prepareClipSource(jobId, clip, clipEndExtendMap[String(entry.originalIndex)], clipTmpDir);
                 const videoPath = preparedClip.videoPath;
-                if (!fs.existsSync(videoPath)) continue;
+                if (!fs.existsSync(videoPath)) return null;
                 const dims = await getVideoDimensions(videoPath);
                 const duration = preparedClip.duration || clip.duration || 30;
                 const detectMode = req.body.detectMode || 'balanced';
-                logConvertStage(jobId, `🎬 [prepare ${idx + 1}/${sourceResults.length}] start | clip=${clip.clip_number}`);
-                logConvertStage(jobId, `🎬 [All] Preparing smart crop ${idx + 1}/${sourceResults.length}`);
+                logConvertStage(jobId, `⚡️ QSV encode attempt: smart-crop-merge`);
 
-                // Smart Crop or Safe Mode
                 if (req.body.smartCrop === true && isFaceDetectionReady()) {
                     await renderFaceCropLikeApp(videoPath, basePath, clipTmpDir, targetDim.w, targetDim.h, detectMode);
                 } else if (false && req.body.smartCrop === true && isFaceDetectionReady()) {
                     const result = await computeFaceCrop(videoPath, 0, duration, clipTmpDir, targetDim.w, targetDim.h, dims.width, dims.height, detectMode);
                     let segments = Array.isArray(result?.segments) ? result.segments : ((result?.strategy) ? [{ start: 0, end: duration, ...result }] : [{ start: 0, end: duration, strategy: 'safe_mode', data: {} }]);
-
                     for (let si = 0; si < segments.length; si++) {
                         const seg = segments[si], segFile = path.join(clipTmpDir, `seg_${si}.mp4`);
                         segFiles.push(segFile);
@@ -2075,7 +2072,7 @@ router.post('/api/convert-ratio-all', async (req, res) => {
                         }
                         await runCommandWithGpuFallback(ffmpegArgs, clipTmpDir, 'legacy-segment');
                     }
-                    if (segments.length > 1) { const cl = path.join(clipTmpDir, 'concat.txt'); fs.writeFileSync(cl, segFiles.map(f => `file '${f.replace(/\\\\/g, '/')}'`).join('\n')); await runCommand(FFMPEG_PATH, ['-y', '-f', 'concat', '-safe', '0', '-i', cl, '-c', 'copy', outputPath], clipTmpDir); }
+                    if (segments.length > 1) { const cl = path.join(clipTmpDir, 'concat.txt'); fs.writeFileSync(cl, segFiles.map(f => `file '${f.replace(/\\/g, '/')}'`).join('\n')); await runCommand(FFMPEG_PATH, ['-y', '-f', 'concat', '-safe', '0', '-i', cl, '-c', 'copy', outputPath], clipTmpDir); }
                     else fs.copyFileSync(segFiles[0], outputPath);
                 } else {
                     const fc = buildSafeModeFilter(targetDim.w, targetDim.h, dims.width, dims.height);
@@ -2083,15 +2080,16 @@ router.post('/api/convert-ratio-all', async (req, res) => {
                 }
 
                 logConvertStage(jobId, `✅ [All] Smart crop ready ${idx + 1}/${sourceResults.length} (clip ${clip.clip_number})`);
-                stage1Prepared.push({ idx, clip, outputPath, outputFilename, basePath });
                 logConvertStage(jobId, `🎬 [prepare ${idx + 1}/${sourceResults.length}] done`);
-            } catch (e) { console.error(`❌ Failed clip ${idx + 1}:`, e.message); }
-        }
+                return { idx, clip, outputPath, outputFilename, basePath };
+            } catch (e) { console.error(`❌ Failed clip ${idx + 1}:`, e.message); return null; }
+        })()));
 
-        logConvertStage(jobId, `✅ [All] Stage 1/3 Prepare Smart Crop done (${stage1Prepared.length}/${sourceResults.length})`);
+        const filteredStage1 = stage1Prepared.filter(Boolean);
+        logConvertStage(jobId, `✅ [All] Stage 1/3 Prepare Smart Crop done (${filteredStage1.length}/${sourceResults.length})`);
         logConvertStage(jobId, `🎬 [All] Stage 2/3 Finalize start (watermark + caption)`);
 
-        await runWithConcurrency(stage1Prepared, CONVERT_WORKERS, async ({ idx, clip, outputPath, outputFilename, basePath }) => {
+        await runWithConcurrency(filteredStage1, CONVERT_WORKERS, async ({ idx, clip, outputPath, outputFilename, basePath }) => {
             const clipWorkDir = path.join(tmpDir, `final_${idx}`);
             fs.mkdirSync(clipWorkDir, { recursive: true });
             try {
@@ -2106,8 +2104,7 @@ router.post('/api/convert-ratio-all', async (req, res) => {
                         const captionLineCount = (assContent.match(/Dialogue:/g) || []).length;
                         logConvertStage(jobId, `✅ Caption clip ${idx + 1}: ${captionLineCount} lines`);
                     }
-                }
-                catch (e) { console.log(`⚠️ Caption clip ${idx + 1} failed:`, e.message); }
+                } catch (e) { console.log(`⚠️ Caption clip ${idx + 1} failed:`, e.message); }
                 const composedPath = path.join(clipWorkDir, `composed_${idx}.mp4`);
                 await composeCropWatermarkCaption(outputPath, composedPath, clipWorkDir, targetDim.w, assPath);
                 fs.copyFileSync(composedPath, outputPath);

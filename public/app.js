@@ -1047,7 +1047,16 @@ async function confirmConvertModal() {
         if (step === 'convert_stage' || step.indexOf('convert_') === 0 || step === 'cutting' || step === 'packaging' || step === 'finalize' || step === 'prepare' || step === 'done' || step === 'error') {
             if (msg) appendConvertStage(msg);
             var detailEl = document.getElementById('convertLoadingDetail');
+            var statusEl = document.getElementById('convertLoadingText');
             if (detailEl && msg) detailEl.textContent = msg;
+            if (statusEl) {
+                if (step === 'prepare') statusEl.textContent = '🎬 Preparing clips...';
+                else if (step === 'finalize') statusEl.textContent = '🏷 Finalizing clips...';
+                else if (step === 'packaging') statusEl.textContent = '📦 Packaging ZIP...';
+                else if (step === 'done') statusEl.textContent = '✅ Convert selesai';
+                else if (step === 'error') statusEl.textContent = '❌ Convert gagal';
+                else if (msg) statusEl.textContent = msg;
+            }
         }
     }
     function setConvertOverlayError(message) {
@@ -1128,8 +1137,8 @@ async function confirmConvertModal() {
                 var clip = allResults[idx] || {};
                 return Object.assign({}, clip, { originalIndex: idx });
             });
-            if (statusEl) statusEl.textContent = '🎬 Converting ' + selectedIndices.length + ' clips...';
-            if (detailEl) detailEl.textContent = (smartCrop ? ('Smart Crop · ' + detectMode) : 'Safe Mode') + (autoCaption ? (' + Caption(' + captionProvider + ')') : '');
+            if (statusEl) statusEl.textContent = '🎬 Bulk convert ' + selectedIndices.length + ' clips';
+            if (detailEl) detailEl.textContent = (smartCrop ? ('Stage 1/3 Prepare Smart Crop · ' + detectMode) : 'Safe Mode') + (autoCaption ? (' · Stage 2/3 Finalize + Caption(' + captionProvider + ')') : '');
 
             // Fire the request — don't await full response (may timeout through proxy)
             var allController = new AbortController();
@@ -1159,7 +1168,7 @@ async function confirmConvertModal() {
             while (Date.now() - startedAt < MAX_WAIT) {
                 await new Promise(function(resolve) { setTimeout(resolve, 2500); });
                 await pollConvertStageHistory();
-                if (detailEl) detailEl.textContent = '🎬 Backend proses convert ' + selectedIndices.length + ' clips...';
+                if (detailEl) detailEl.textContent = '🎬 Backend bulk convert ' + selectedIndices.length + ' clips...';
                 try {
                     var aResp = await fetch('/api/convert-artifact?' + new URLSearchParams({
                         jobId: currentJobId, mode: 'all', ratio: _cvtRatio,
@@ -1204,8 +1213,8 @@ async function confirmConvertModal() {
             // Convert single clip — fire request without waiting for full response
             var clipIdx = _cvtClipIndex;
             var clip = allResults[clipIdx];
-            if (statusEl) statusEl.textContent = '🎬 Converting clip ' + clip.clip_number + '...';
-            if (detailEl) detailEl.textContent = (smartCrop ? ('Smart Crop · ' + detectMode) : 'Safe Mode') + (autoCaption ? (' + Caption(' + captionProvider + ')') : '');
+            if (statusEl) statusEl.textContent = '🎬 Single convert clip ' + clip.clip_number;
+            if (detailEl) detailEl.textContent = (smartCrop ? 'Stage 1/3 Prepare Smart Crop' : 'Safe Mode') + (autoCaption ? (' · Stage 2/3 Finalize + Caption(' + captionProvider + ')') : '');
 
             // Fire the request — don't await full response (may timeout through proxy)
             var fetchDone = false;
@@ -1241,7 +1250,7 @@ async function confirmConvertModal() {
                 });
                 hasPackagingDone = hEvents.some(function(evt) {
                     var msg = String(evt && evt.message || '');
-                    return msg.indexOf('Stage 3/3 Packaging done') !== -1 || msg.indexOf('Stage 2/3 Finalize done') !== -1 || msg.indexOf('Stage 1/3 Prepare Smart Crop done') !== -1 || msg.indexOf('Convert selesai') !== -1;
+                    return msg.indexOf('Stage 3/3 Packaging done') !== -1 || msg.indexOf('Stage 2/3 Finalize done') !== -1 || msg.indexOf('Stage 1/3 Prepare Smart Crop done') !== -1 || msg.indexOf('Convert selesai') !== -1 || msg.indexOf('[All] Finalize done') !== -1 || msg.indexOf('[All] Stage 3/3 Packaging done') !== -1;
                 });
                 hasConvertFailed = hEvents.some(function(evt) {
                     var msg = String(evt && evt.message || '');
@@ -1249,7 +1258,7 @@ async function confirmConvertModal() {
                 });
                 if (finalEvt && finalEvt.step === 'done') hasPackagingDone = true;
                 if (hasPackagingDone || hasConvertFailed) break;
-                if (detailEl) detailEl.textContent = '🎬 Backend proses convert clip ' + clip.clip_number + '...';
+                if (detailEl) detailEl.textContent = '🎬 Backend single convert clip ' + clip.clip_number + '...';
             }
             // Cancel the original fetch since we got our result from history
             controller.abort();
@@ -1360,7 +1369,7 @@ async function confirmConvertModal() {
                 return msg.indexOf('Convert failed') !== -1 || evt.step === 'error';
             });
             if (hasPackagingDone) {
-                if (statusErrorEl) statusErrorEl.textContent = '📦 Backend selesai packaging. Ambil hasil...';
+                if (statusErrorEl) statusErrorEl.textContent = '📦 Stage 3/3 Packaging done. Ambil hasil...';
                 if (detailErrorEl) detailErrorEl.textContent = 'Log backend selesai. Mencoba ambil artifact convert...';
                 try {
                     recoveredArtifact = await tryRecoverConvertArtifact({
