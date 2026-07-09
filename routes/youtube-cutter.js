@@ -1833,9 +1833,12 @@ function calculateCenterCrop(srcW, srcH, targetAspect) {
 
 async function renderFaceCropLikeApp(videoPath, outputPath, tmpDir, targetW, targetH, detectMode) {
     const cropRawPath = path.join(tmpDir, 'face_crop_like_app.mp4');
-    await runCommand(PYTHON_CMD, [...PYTHON_ARGS, FACE_CROP_VIDEO_SCRIPT, videoPath, cropRawPath, String(targetW), String(targetH), '--detect-mode', detectMode], tmpDir);
-    await runCommandWithGpuFallback(['-y', '-i', cropRawPath, '-i', videoPath, '-map', '0:v:0', '-map', '1:a?', '-c:v', 'libx264', '-preset', 'fast', '-crf', '20', '-c:a', 'aac', '-b:a', '192k', outputPath], tmpDir, 'smart-crop-merge');
-    try { fs.unlinkSync(cropRawPath); } catch { }
+    try {
+        await runCommand(PYTHON_CMD, [...PYTHON_ARGS, FACE_CROP_VIDEO_SCRIPT, videoPath, cropRawPath, String(targetW), String(targetH), '--detect-mode', detectMode], tmpDir);
+        await runCommandWithGpuFallback(['-y', '-i', cropRawPath, '-i', videoPath, '-map', '0:v:0', '-map', '1:a?', '-c:v', 'libx264', '-preset', 'fast', '-crf', '20', '-c:a', 'aac', '-b:a', '192k', outputPath], tmpDir, 'smart-crop-merge');
+    } finally {
+        try { fs.unlinkSync(cropRawPath); } catch { }
+    }
 }
 
 async function buildCaptionAss(videoPath, tmpDir, idx, targetDim, reqBody) {
@@ -2071,7 +2074,12 @@ router.post('/api/convert-ratio-all', async (req, res) => {
                     } catch (faceErr) {
                         console.warn(`⚠️ smart-crop failed for clip ${idx + 1}, fallback to safe mode:`, faceErr.message);
                         const fc = buildSafeModeFilter(targetDim.w, targetDim.h, dims.width, dims.height);
-                        await runCommandWithGpuFallback(['-y', '-i', videoPath, '-filter_complex', fc, '-map', '[out]', '-map', '0:a?', '-c:v', 'libx264', '-preset', 'fast', '-crf', '20', '-c:a', 'aac', '-b:a', '192k', basePath], tmpDir, 'all-safe-mode-fallback');
+                        try {
+                            await runCommandWithGpuFallback(['-y', '-i', videoPath, '-filter_complex', fc, '-map', '[out]', '-map', '0:a?', '-c:v', 'libx264', '-preset', 'fast', '-crf', '20', '-c:a', 'aac', '-b:a', '192k', basePath], tmpDir, 'all-safe-mode-fallback');
+                        } catch (safeErr) {
+                            console.warn(`⚠️ safe-mode fallback failed for clip ${idx + 1}:`, safeErr.message);
+                            return null;
+                        }
                     }
                 } else if (false && req.body.smartCrop === true && isFaceDetectionReady()) {
                     const result = await computeFaceCrop(videoPath, 0, duration, clipTmpDir, targetDim.w, targetDim.h, dims.width, dims.height, detectMode);
