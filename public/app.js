@@ -1150,7 +1150,8 @@ async function confirmConvertModal() {
                 allFetchDone = true;
             });
 
-            // Wait for backend to finish — poll artifact endpoint until success
+            // Wait for backend to finish — keep overlay open until artifact exists
+            keepConvertOverlayOpen = true;
             var startedAt = Date.now();
             var MAX_WAIT = 600000; // 10 min max
             var recoveredArtifact = null;
@@ -1178,6 +1179,7 @@ async function confirmConvertModal() {
                 }
             }
             allController.abort();
+            keepConvertOverlayOpen = false;
             if (!recoveredArtifact) {
                 console.error('[ALL CONVERT] Artifact never available after 10 min. Last error:', lastPollError);
                 throw new Error('Convert timeout — artifact tidak tersedia setelah 10 menit. ' + lastPollError);
@@ -1298,10 +1300,12 @@ async function confirmConvertModal() {
             setConvertGlobalHashtagsRaw('');
         }
 
-        // Close loading overlay first, then show completion modal
-        var loadingOv = document.getElementById('convertLoadingOverlay');
-        console.log('[ALL CONVERT] loadingOv exists:', !!loadingOv);
-        if (loadingOv) loadingOv.remove();
+            // Close loading overlay first, then show completion modal
+            var loadingOv = document.getElementById('convertLoadingOverlay');
+            console.log('[ALL CONVERT] loadingOv exists:', !!loadingOv);
+            if (loadingOv) loadingOv.remove();
+            keepConvertOverlayOpen = false;
+
         var infoText = (smartCrop ? ('🧠 Smart Crop · ' + detectMode) : '📐 Safe Mode') + (autoCaption ? (' + 🎙 Caption(' + captionProvider + ')') : '') + ' · ' + _cvtRatio;
         document.getElementById('convertCompleteInfo').textContent = infoText;
         var dlLink = document.getElementById('convertDownloadLink');
