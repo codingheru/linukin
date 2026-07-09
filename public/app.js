@@ -1339,7 +1339,8 @@ async function confirmConvertModal() {
             keepConvertOverlayOpen = false;
 
         var infoText = (smartCrop ? ('🧠 Smart Crop · ' + detectMode) : '📐 Safe Mode') + (autoCaption ? (' + 🎙 Caption(' + captionProvider + ')') : '') + ' · ' + _cvtRatio;
-        document.getElementById('convertCompleteInfo').textContent = infoText;
+        var convertCompleteSubtitle = document.getElementById('convertCompleteSubtitle');
+        if (convertCompleteSubtitle) convertCompleteSubtitle.textContent = infoText;
         var dlLink = document.getElementById('convertDownloadLink');
         dlLink.style.display = 'flex';
         dlLink.href = _cvtLastVideoUrl;
@@ -1448,7 +1449,8 @@ async function confirmConvertModal() {
             }
             setConvertGlobalHashtagsRaw('');
             var recoverInfoText = (smartCrop ? ('🧠 Smart Crop · ' + detectMode) : '📐 Safe Mode') + (autoCaption ? (' + 🎙 Caption(' + captionProvider + ')') : '') + ' · ' + _cvtRatio;
-            document.getElementById('convertCompleteInfo').textContent = recoverInfoText;
+            var convertCompleteSubtitle = document.getElementById('convertCompleteSubtitle');
+            if (convertCompleteSubtitle) convertCompleteSubtitle.textContent = recoverInfoText;
             var recoverDlLink = document.getElementById('convertDownloadLink');
             recoverDlLink.style.display = 'flex';
             recoverDlLink.href = _cvtLastVideoUrl;
