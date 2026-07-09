@@ -2088,7 +2088,12 @@ router.post('/api/convert-ratio-all', async (req, res) => {
                             await runCommandWithEncodeFallback(['-y', '-i', videoPath, '-filter_complex', fc, '-map', '[out]', '-map', '0:a?', '-c:v', 'libx264', '-preset', 'fast', '-crf', '20', '-c:a', 'aac', '-b:a', '192k', basePath], tmpDir, 'all-safe-mode-fallback');
                         } catch (safeErr) {
                             console.warn(`⚠️ safe-mode fallback failed for clip ${idx + 1}:`, safeErr.message);
-                            return null;
+                            try {
+                                fs.copyFileSync(videoPath, basePath);
+                            } catch (copyErr) {
+                                console.warn(`⚠️ raw copy fallback failed for clip ${idx + 1}:`, copyErr.message);
+                                return null;
+                            }
                         }
                     }
                 } else if (false && req.body.smartCrop === true && isFaceDetectionReady()) {
