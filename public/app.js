@@ -694,6 +694,7 @@ function computeRatioCrop(videoW, videoH, ratioStr) {
 // === CONVERT MODAL ===
 var _cvtClipIndex = 0, _cvtRatio = '9:16', _cvtMode = 'single';
 var _cvtLastVideoUrl = '', _cvtLastClipData = null, _cvtGlobalHashtagsRaw = '';
+var _cvtOutputItems = [];
 
 function getConvertGlobalHashtagsInput() {
     return document.getElementById('convertGlobalHashtags');
@@ -781,12 +782,20 @@ function applyGlobalHashtagsToClip(clip) {
 }
 
 function bindConvertGlobalHashtagsInput() {
-    var input = getConvertGlobalHashtagsInput();
-    if (!input || input.dataset.bound === '1') return;
+    var input = getConvertGlobalHashtagsInput() || document.getElementById('convertGlobalHashtagsNav');
+    if (!input) return;
+    if (input.dataset.bound === '1') return;
     input.addEventListener('input', function () {
         setConvertGlobalHashtagsRaw(input.value || '');
+        var navInput = document.getElementById('convertGlobalHashtagsNav');
+        var modalInput = document.getElementById('convertGlobalHashtags');
+        if (navInput && navInput !== input) navInput.value = input.value || '';
+        if (modalInput && modalInput !== input) modalInput.value = input.value || '';
+        updateOutputManagerView();
     });
     input.dataset.bound = '1';
+    var other = input.id === 'convertGlobalHashtags' ? document.getElementById('convertGlobalHashtagsNav') : document.getElementById('convertGlobalHashtags');
+    if (other && other.value !== input.value) other.value = input.value || '';
 }
 
 function getTableShareLocalMediaMap() {
@@ -818,23 +827,24 @@ function getTableShareLocalMedia(link) {
 }
 
 function updateConvertCompleteActions() {
-    var hashtagInput = getConvertGlobalHashtagsInput();
-    if (hashtagInput && hashtagInput.value !== getConvertGlobalHashtagsRaw()) {
-        hashtagInput.value = getConvertGlobalHashtagsRaw();
-    }
+    var hashtagInput = getConvertGlobalHashtagsInput() || document.getElementById('convertGlobalHashtagsNav');
+    if (hashtagInput && hashtagInput.value !== getConvertGlobalHashtagsRaw()) hashtagInput.value = getConvertGlobalHashtagsRaw();
+    var navInput = document.getElementById('convertGlobalHashtagsNav');
+    if (navInput && navInput !== hashtagInput && navInput.value !== getConvertGlobalHashtagsRaw()) navInput.value = getConvertGlobalHashtagsRaw();
 
     var saveBtn = document.getElementById('convertSaveTableBtn');
     var hint = document.getElementById('convertSaveTableHint');
-    if (!saveBtn || !hint) return;
-
-    var canSaveAll = !!(_cvtLastClipData && _cvtLastClipData.mode === 'all' && Array.isArray(_cvtLastClipData.clips) && _cvtLastClipData.clips.length);
-    saveBtn.style.display = canSaveAll ? 'flex' : 'none';
-    saveBtn.disabled = false;
-    saveBtn.textContent = '🗂 Simpan Semua ke Tabel';
-    hint.style.display = canSaveAll ? 'block' : 'none';
-    hint.textContent = canSaveAll
-        ? (_cvtLastClipData.clips.length + ' clip MP4 akan diupload ke Catbox lalu disimpan ke tabel dengan status pending.')
-        : '';
+    if (saveBtn && hint) {
+        var canSaveAll = !!(_cvtLastClipData && _cvtLastClipData.mode === 'all' && Array.isArray(_cvtLastClipData.clips) && _cvtLastClipData.clips.length);
+        saveBtn.style.display = canSaveAll ? 'flex' : 'none';
+        saveBtn.disabled = false;
+        saveBtn.textContent = '🗂 Simpan Semua ke Tabel';
+        hint.style.display = canSaveAll ? 'block' : 'none';
+        hint.textContent = canSaveAll
+            ? (_cvtLastClipData.clips.length + ' clip MP4 akan diupload ke Catbox lalu disimpan ke tabel dengan status pending.')
+            : '';
+    }
+    updateOutputManagerView();
 }
 
 async function saveConvertedClipsToTable() {
@@ -1319,6 +1329,7 @@ async function confirmConvertModal() {
         var infoText = (smartCrop ? ('🧠 Smart Crop · ' + detectMode) : '📐 Safe Mode') + (autoCaption ? (' + 🎙 Caption(' + captionProvider + ')') : '') + ' · ' + _cvtRatio;
         document.getElementById('convertCompleteInfo').textContent = infoText;
         var dlLink = document.getElementById('convertDownloadLink');
+        dlLink.style.display = 'flex';
         dlLink.href = _cvtLastVideoUrl;
         dlLink.download = _cvtLastClipData.filename;
         dlLink.textContent = '⬇ Download';
@@ -1427,6 +1438,7 @@ async function confirmConvertModal() {
             var recoverInfoText = (smartCrop ? ('🧠 Smart Crop · ' + detectMode) : '📐 Safe Mode') + (autoCaption ? (' + 🎙 Caption(' + captionProvider + ')') : '') + ' · ' + _cvtRatio;
             document.getElementById('convertCompleteInfo').textContent = recoverInfoText;
             var recoverDlLink = document.getElementById('convertDownloadLink');
+            recoverDlLink.style.display = 'flex';
             recoverDlLink.href = _cvtLastVideoUrl;
             recoverDlLink.download = _cvtLastClipData.filename;
             recoverDlLink.textContent = '⬇ Download';
@@ -3812,3 +3824,62 @@ function rzCaptureThumbFromFile(file) {
 
 consumeTableShareDraftToRepliz();
 consumeTableShareDraftToZernio();
+function getConvertOutputItems() {
+    if (Array.isArray(_cvtOutputItems) && _cvtOutputItems.length) return _cvtOutputItems;
+    if (_cvtLastClipData && Array.isArray(_cvtLastClipData.clips)) {
+        return _cvtLastClipData.clips.map(function (clip, idx) {
+            return Object.assign({ index: idx, selected: true }, clip || {});
+        });
+    }
+    return [];
+}
+
+function updateOutputManagerView() {
+    var list = document.getElementById('convertOutputList');
+    if (!list) return;
+    var items = getConvertOutputItems();
+    if (!items.length) {
+        list.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:20px;color:var(--text-muted);border:1px dashed var(--border-subtle);border-radius:12px;">Belum ada output convert.</div>';
+        return;
+    }
+    list.innerHTML = items.map(function (item, idx) {
+        var checked = item.selected === false ? '' : 'checked';
+        return '<label style="display:flex;gap:10px;align-items:flex-start;padding:12px;border:1px solid var(--border-subtle);border-radius:12px;background:rgba(10,12,20,0.55);">' +
+            '<input type="checkbox" data-output-index="' + idx + '" ' + checked + ' onchange="toggleConvertOutputSelection(' + idx + ', this.checked)">' +
+            '<div style="min-width:0;flex:1;">' +
+            '<div style="font-weight:700;">' + escapeHtml(item.filename || ('output-' + (idx + 1))) + '</div>' +
+            '<div style="font-size:0.8rem;color:var(--text-muted);word-break:break-word;">' + escapeHtml(item.caption || item.title || '') + '</div>' +
+            '</div></label>';
+    }).join('');
+}
+
+function toggleConvertOutputSelection(idx, checked) {
+    if (!_cvtOutputItems || !_cvtOutputItems[idx]) return;
+    _cvtOutputItems[idx].selected = !!checked;
+}
+
+function openConvertOutputFolder() {
+    alert('Folder output harus dibuka dari file explorer/server path lokal. Jika backend expose path, gue sambungin tombol ini ke endpoint itu.');
+}
+
+async function downloadSelectedConvertOutputs() {
+    alert('Download ZIP untuk batch output belum ada endpoint khusus. Tombol ini bakal gue sambungin ke artifact convert berikutnya.');
+}
+
+async function sendSelectedConvertOutputsToRepliz() {
+    var selected = getConvertOutputItems().filter(function (item) { return item.selected !== false; });
+    if (!selected.length) {
+        alert('Pilih output dulu');
+        return;
+    }
+    alert('Batch Repliz perlu endpoint upload multi-file. State UI sudah siap, backend route masih perlu disambung.');
+}
+
+async function saveSelectedConvertOutputsToTable() {
+    var selected = getConvertOutputItems().filter(function (item) { return item.selected !== false; });
+    if (!selected.length) {
+        alert('Pilih output dulu');
+        return;
+    }
+    alert('Batch simpan ke tabel perlu mapping output item ke row backend. State UI sudah siap, route masih perlu disambung.');
+}
