@@ -1521,9 +1521,8 @@
           style="width:48px;height:48px;border-radius:14px;background:var(--accent-green);display:flex;align-items:center;justify-content:center;font-size:1.4rem;box-shadow:0 4px 16px rgba(34,197,94,0.3)">
           ✅</div>
         <div>
-          <h3 style="margin:0;font-size:1.1rem;font-weight:800;color:var(--accent-green)">Video Ready!</h3>
-          <p id="convertCompleteInfo" style="margin:2px 0 0;font-size:0.78rem;color:var(--text-muted)">Smart Crop +
-            Caption applied</p>
+          <h3 id="convertCompleteTitle" style="margin:0;font-size:1.1rem;font-weight:800;color:var(--accent-green)">Video Ready!</h3>
+          <p id="convertCompleteSubtitle" style="margin:2px 0 0;font-size:0.78rem;color:var(--text-muted)">Smart Crop + Caption applied</p>
         </div>
       </div>
 
@@ -1534,7 +1533,7 @@
       </div>
 
       <!-- Action Buttons -->
-      <div style="display:flex;gap:10px;margin-bottom:10px;flex-wrap:wrap">
+      <div id="convertCompleteActions" style="display:flex;gap:10px;margin-bottom:10px;flex-wrap:wrap">
         <a id="convertDownloadLink" href="#" download
           style="flex:1;min-width:180px;text-align:center;padding:14px;background:var(--accent-green);color:white;border-radius:12px;font-weight:700;text-decoration:none;display:flex;align-items:center;justify-content:center;gap:8px;font-family:var(--font);font-size:0.9rem">
           ⬇ Download
@@ -1548,14 +1547,14 @@
           📲 Schedule to Repliz
         </button>
       </div>
-      <div style="margin-bottom:12px">
+      <div id="convertGlobalHashtagsWrap" style="margin-bottom:12px">
         <label for="convertGlobalHashtags" style="font-size:0.78rem;font-weight:700;color:var(--text-primary);display:block;margin-bottom:6px">#️⃣ Global Hashtags</label>
         <input id="convertGlobalHashtags" type="text" placeholder="#fyp #viral #podcast"
           style="width:100%;padding:12px 14px;background:rgba(255,255,255,0.04);border:1px solid var(--border-subtle);border-radius:10px;color:var(--text-primary);font-size:0.82rem;font-family:var(--font);box-sizing:border-box">
         <div style="margin-top:6px;font-size:0.74rem;color:var(--text-muted)">Berlaku untuk hasil convert terbaru sebelum simpan ke tabel, kirim ke Repliz/Zernio, atau download metadata caption.</div>
       </div>
       <div id="convertSaveTableHint" style="display:none;margin-bottom:12px;font-size:0.76rem;color:var(--text-muted)"></div>
-      <button onclick="closeConvertCompleteModal()"
+      <button id="convertCompleteCloseBtn" onclick="closeConvertCompleteModal()"
         style="width:100%;padding:10px;border-radius:10px;background:rgba(255,255,255,0.06);border:1px solid var(--border-subtle);color:var(--text-secondary);cursor:pointer;font-weight:600;font-family:var(--font);font-size:0.82rem">Close</button>
     </div>
   </div>

@@ -844,6 +844,18 @@ function updateConvertCompleteActions() {
             ? (_cvtLastClipData.clips.length + ' clip MP4 akan diupload ke Catbox lalu disimpan ke tabel dengan status pending.')
             : '';
     }
+    var completeTitle = document.getElementById('convertCompleteTitle');
+    var completeSub = document.getElementById('convertCompleteSubtitle');
+    if (completeTitle) completeTitle.textContent = 'Video Ready!';
+    if (completeSub) completeSub.textContent = 'Smart Crop + Caption applied';
+    var completeActions = document.getElementById('convertCompleteActions');
+    if (completeActions) completeActions.style.display = 'flex';
+    var globalHashtagWrap = document.getElementById('convertGlobalHashtagsWrap');
+    if (globalHashtagWrap) globalHashtagWrap.style.display = 'block';
+    var downloadBtn = document.getElementById('convertDownloadLink');
+    if (downloadBtn) downloadBtn.style.display = 'flex';
+    var closeBtn = document.getElementById('convertCompleteCloseBtn');
+    if (closeBtn) closeBtn.textContent = 'Close';
     updateOutputManagerView();
 }
 
@@ -1483,6 +1495,22 @@ function closeConvertCompleteModal() {
         saveBtn.disabled = false;
         saveBtn.textContent = '🗂 Simpan Semua ke Tabel';
     }
+    var completeActions = document.getElementById('convertCompleteActions');
+    if (completeActions) completeActions.style.display = 'flex';
+    var completeTitle = document.getElementById('convertCompleteTitle');
+    if (completeTitle) completeTitle.textContent = 'Video Ready!';
+    var completeSub = document.getElementById('convertCompleteSubtitle');
+    if (completeSub) completeSub.textContent = 'Smart Crop + Caption applied';
+    var globalHashtagWrap = document.getElementById('convertGlobalHashtagsWrap');
+    if (globalHashtagWrap) globalHashtagWrap.style.display = 'block';
+    var completeActions = document.getElementById('convertCompleteActions');
+    if (completeActions) completeActions.style.display = 'flex';
+    var completeTitle = document.getElementById('convertCompleteTitle');
+    if (completeTitle) completeTitle.textContent = 'Video Ready!';
+    var completeSub = document.getElementById('convertCompleteSubtitle');
+    if (completeSub) completeSub.textContent = 'Smart Crop + Caption applied';
+    var globalHashtagWrap = document.getElementById('convertGlobalHashtagsWrap');
+    if (globalHashtagWrap) globalHashtagWrap.style.display = 'block';
 }
 
 async function sendConvertToRepliz() {
