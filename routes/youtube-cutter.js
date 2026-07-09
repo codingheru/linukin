@@ -2236,3 +2236,104 @@ router.get('/api/open-output-folder', (req, res) => {
         res.status(500).send(err.message);
     }
 });
+
+function uploadToCatbox(buffer, filename, mimetype = 'application/octet-stream') {
+    const https = require('https');
+    const CRLF = '\r\n';
+    const boundary = '----CatboxUpload' + Date.now() + Math.random().toString(36).slice(2);
+    const parts = [];
+    parts.push(Buffer.from('--' + boundary + CRLF +
+        'Content-Disposition: form-data; name="reqtype"' + CRLF + CRLF +
+        'fileupload' + CRLF));
+    parts.push(Buffer.from('--' + boundary + CRLF +
+        'Content-Disposition: form-data; name="fileToUpload"; filename="' + filename + '"' + CRLF +
+        'Content-Type: ' + mimetype + CRLF + CRLF));
+    parts.push(buffer);
+    parts.push(Buffer.from(CRLF + '--' + boundary + '--' + CRLF));
+    const body = Buffer.concat(parts);
+
+    return new Promise((resolve, reject) => {
+        const req = https.request({
+            hostname: 'catbox.moe',
+            path: '/user/api.php',
+            method: 'POST',
+            headers: {
+                'Content-Type': 'multipart/form-data; boundary=' + boundary,
+                'Content-Length': body.length,
+                'User-Agent': 'Mozilla/5.0'
+            }
+        }, (res) => {
+            let data = '';
+            res.on('data', (chunk) => data += chunk);
+            res.on('end', () => {
+                const url = String(data || '').trim();
+                if (url.startsWith('https://') || url.startsWith('http://')) return resolve(url);
+                reject(new Error('Catbox response: ' + url.slice(0, 200)));
+            });
+        });
+        req.on('error', reject);
+        req.write(body);
+        req.end();
+    });
+}
+
+function appendTableRow(row) {
+    const https = require('https');
+    const APPS_SCRIPT_URL = process.env.TABLE_SHARE_APPS_SCRIPT_URL;
+    if (!APPS_SCRIPT_URL) throw new Error('Env belum lengkap: TABLE_SHARE_APPS_SCRIPT_URL');
+    return new Promise((resolve, reject) => {
+        const u = new URL(APPS_SCRIPT_URL);
+        const payload = JSON.stringify({ action: 'append', row });
+        const req = https.request({
+            protocol: u.protocol,
+            hostname: u.hostname,
+            port: u.port || 443,
+            path: u.pathname + u.search,
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Content-Length': Buffer.byteLength(payload)
+            }
+        }, (res) => {
+            let data = '';
+            res.on('data', (chunk) => data += chunk);
+            res.on('end', () => {
+                try { resolve(data ? JSON.parse(data) : {}); } catch (e) { reject(new Error('Apps Script response bukan JSON valid')); }
+            });
+        });
+        req.on('error', reject);
+        req.write(payload);
+        req.end();
+    });
+}
+
+router.post('/api/video-share/batch-from-output', async (req, res) => {
+    try {
+        const { files = [] } = req.body || {};
+        if (!Array.isArray(files) || !files.length) return res.status(400).json({ status: 'error', error: 'files wajib diisi' });
+        const rows = [];
+        for (const file of files) {
+            const filename = String(file.filename || '').trim();
+            if (!filename) continue;
+            const filePath = path.join(OUTPUT_DIR, filename);
+            if (!fs.existsSync(filePath)) continue;
+            const buffer = fs.readFileSync(filePath);
+            if (!buffer.length) continue;
+            const link = await uploadToCatbox(buffer, filename, 'video/mp4');
+            const row = {
+                link,
+                title: String(file.title || filename).trim(),
+                caption: String(file.caption || '').trim(),
+                hashtag: String(file.hashtags || file.hashtag || '').trim(),
+                status: 'pending'
+            };
+            await appendTableRow(row);
+            rows.push({ ...row, filename, localMediaUrl: '/output/' + encodeURIComponent(filename) });
+        }
+        if (!rows.length) return res.status(400).json({ status: 'error', error: 'Tidak ada file output yang bisa diupload' });
+        res.json({ status: 'ok', saved: rows.length, rows });
+    } catch (error) {
+        console.error('[VIDEO SHARE OUTPUT BATCH]', error);
+        res.status(500).json({ status: 'error', error: error.message });
+    }
+});

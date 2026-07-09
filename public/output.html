@@ -198,25 +198,31 @@
       window.location.href = 'index.html#repliz';
     }
 
-    function saveSelectedOutputsToTable() {
+    async function saveSelectedOutputsToTable() {
       const files = selectedOutputFiles();
       if (!files.length) return alert('Pilih output dulu');
-      const payload = files.map((file, index) => ({
-        link: file.url || '/output/' + encodeURIComponent(file.filename),
-        filename: file.filename,
-        title: file.filename,
-        caption: '',
-        hashtags: '',
-        status: 'draft',
-        source: 'output-page',
-        order: index + 1
-      }));
-      localStorage.setItem('table_share_output_draft', JSON.stringify({
-        source: 'output-page',
-        items: payload,
-        savedAt: new Date().toISOString()
-      }));
-      window.location.href = 'tabel-share-video.html';
+      const btn = event && event.target ? event.target : null;
+      const oldText = btn ? btn.textContent : '';
+      if (btn) { btn.disabled = true; btn.textContent = 'Upload...'; }
+      try {
+        const res = await fetch('/api/video-share/batch-from-output', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ files })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
+        localStorage.setItem('table_share_output_draft', JSON.stringify({
+          source: 'output-page',
+          items: Array.isArray(data.rows) ? data.rows : [],
+          savedAt: new Date().toISOString()
+        }));
+        window.location.href = 'tabel-share-video.html';
+      } catch (err) {
+        alert('Gagal upload ke tabel: ' + err.message);
+      } finally {
+        if (btn) { btn.disabled = false; btn.textContent = oldText || '🗂 Simpan ke Tabel'; }
+      }
     }
 
     loadOutputFiles();
