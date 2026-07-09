@@ -164,9 +164,10 @@
           mediaUrl: row.link || '',
           localMediaUrl: localMediaUrl,
           title: row.title || '',
-          caption: row.caption || ''
+          caption: row.caption || '',
+          hashtags: row.hashtag || ''
         }));
-        window.location.href = 'index.html';
+        window.location.href = 'index.html#repliz';
       } catch (err) {
         alert('Gagal kirim ke Repliz: ' + err.message);
       }
@@ -183,9 +184,10 @@
           mediaUrl: row.link || '',
           localMediaUrl: localMediaUrl,
           title: row.title || '',
-          caption: row.caption || ''
+          caption: row.caption || '',
+          hashtags: row.hashtag || ''
         }));
-        window.location.href = 'index.html';
+        window.location.href = 'index.html#zernio';
       } catch (err) {
         alert('Gagal kirim ke Zernio: ' + err.message);
       }
@@ -278,6 +280,29 @@
       }
     }
 
+    function loadQueuedDrafts() {
+      try {
+        const replizDraft = JSON.parse(localStorage.getItem('repliz_table_share_draft') || 'null');
+        const zernioDraft = JSON.parse(localStorage.getItem('zernio_table_share_draft') || 'null');
+        const outputDraft = JSON.parse(localStorage.getItem('table_share_output_draft') || 'null');
+        const combined = [];
+        if (replizDraft && Array.isArray(replizDraft.items)) combined.push(...replizDraft.items);
+        if (zernioDraft && Array.isArray(zernioDraft.items)) combined.push(...zernioDraft.items);
+        if (outputDraft && Array.isArray(outputDraft.items)) combined.push(...outputDraft.items);
+        if (!combined.length) return [];
+        return combined.map((item) => ({
+          link: item.link || item.mediaUrl || '',
+          title: item.title || '',
+          caption: item.caption || '',
+          hashtag: item.hashtags || item.hashtag || '',
+          status: item.status || 'pending',
+          localMediaUrl: item.localMediaUrl || item.mediaUrl || ''
+        }));
+      } catch (err) {
+        return [];
+      }
+    }
+
     async function loadData() {
       const tbody = document.getElementById('videoTableBody');
       tbody.innerHTML = '<tr><td colspan="6" class="table-share-empty">Loading data...</td></tr>';
@@ -285,10 +310,17 @@
         const resp = await fetch('/api/video-table');
         if (!resp.ok) throw new Error('HTTP ' + resp.status);
         const data = await resp.json();
-        allRows = Array.isArray(data) ? data : [];
+        const queued = loadQueuedDrafts();
+        allRows = Array.isArray(data) ? data.concat(queued) : queued;
         renderCurrentRows();
       } catch (err) {
-        tbody.innerHTML = `<tr><td colspan="6" class="table-share-empty">Gagal load data: ${escapeHtml(err.message)}</td></tr>`;
+        const queued = loadQueuedDrafts();
+        allRows = queued;
+        if (queued.length) {
+          renderCurrentRows();
+        } else {
+          tbody.innerHTML = `<tr><td colspan="6" class="table-share-empty">Gagal load data: ${escapeHtml(err.message)}</td></tr>`;
+        }
       }
     }
 
