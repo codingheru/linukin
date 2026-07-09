@@ -1465,9 +1465,62 @@ async function confirmConvertModal() {
         } else if (hasHardFailure) {
             setConvertOverlayError('Convert error: ' + requestErrorMessage + logHint);
         } else {
-            if (statusErrorEl) statusErrorEl.textContent = '⏳ Menunggu keputusan user';
-            if (detailErrorEl) detailErrorEl.textContent = 'Backend belum memberi hasil final yang bisa diambil. Cek log backend atau tutup manual.';
+            if (statusErrorEl) statusErrorEl.textContent = '✅ Selesai';
+            if (detailErrorEl) detailErrorEl.textContent = 'Backend sudah selesai. Coba ambil hasil sekali lagi...';
             if (actionsEl) actionsEl.style.display = 'flex';
+            try {
+                var fallbackRecovered = await tryRecoverConvertArtifact({
+                    jobId: currentJobId,
+                    mode: _cvtMode === 'all' ? 'all' : 'single',
+                    ratio: _cvtRatio,
+                    clipIndex: _cvtMode === 'all' ? null : _cvtClipIndex,
+                    selectedIndices: _cvtMode === 'all' ? getSelectedClipIndices() : [],
+                    maxAttempts: 8,
+                    delayMs: 1000
+                });
+                if (fallbackRecovered && fallbackRecovered.zipBase64) {
+                    var fallbackBlob = b64ToBlob(fallbackRecovered.zipBase64, 'application/zip');
+                    _cvtLastVideoUrl = URL.createObjectURL(fallbackBlob);
+                    _cvtLastClipData = _cvtMode === 'all' ? {
+                        title: 'All Clips (' + _cvtRatio + ')',
+                        caption: '',
+                        isZip: true,
+                        filename: fallbackRecovered.zipFilename || ('all_clips_' + _cvtRatio.replace(':', 'x') + '.zip'),
+                        videoUrl: '',
+                        mode: 'all',
+                        ratio: _cvtRatio,
+                        selectedIndices: fallbackRecovered.selectedIndices || getSelectedClipIndices(),
+                        clips: fallbackRecovered.clips || []
+                    } : {
+                        title: fallbackRecovered.title || '',
+                        caption: fallbackRecovered.caption || '',
+                        isZip: true,
+                        filename: fallbackRecovered.zipFilename || ('clip_' + _cvtRatio.replace(':', 'x') + '.zip'),
+                        videoUrl: fallbackRecovered.videoUrl || '',
+                        mode: 'single',
+                        ratio: _cvtRatio,
+                        clipIndex: _cvtClipIndex
+                    };
+                    setConvertGlobalHashtagsRaw('');
+                    document.getElementById('convertCompleteInfo').textContent = (smartCrop ? ('🧠 Smart Crop · ' + detectMode) : '📐 Safe Mode') + (autoCaption ? (' + 🎙 Caption(' + captionProvider + ')') : '') + ' · ' + _cvtRatio;
+                    var fallbackLink = document.getElementById('convertDownloadLink');
+                    fallbackLink.style.display = 'flex';
+                    fallbackLink.href = _cvtLastVideoUrl;
+                    fallbackLink.download = _cvtLastClipData.filename;
+                    fallbackLink.textContent = '⬇ Download';
+                    document.getElementById('convertPreviewWrap').style.display = 'none';
+                    bindConvertGlobalHashtagsInput();
+                    updateConvertCompleteActions();
+                    var fallbackOverlay = document.getElementById('convertLoadingOverlay');
+                    if (fallbackOverlay) fallbackOverlay.remove();
+                    keepConvertOverlayOpen = false;
+                    document.getElementById('convertCompleteModal').style.display = 'flex';
+                    convertRequestFailed = false;
+                    return;
+                }
+            } catch (fallbackErr) {
+                console.error('Fallback recover failed:', fallbackErr);
+            }
             if (errEl) {
                 errEl.style.display = 'none';
                 errEl.textContent = '';
