@@ -1425,6 +1425,7 @@ async function confirmConvertModal() {
             updateConvertCompleteActions();
             var overlayNow = document.getElementById('convertLoadingOverlay');
             if (overlayNow) overlayNow.remove();
+            keepConvertOverlayOpen = false;
             document.getElementById('convertCompleteModal').style.display = 'flex';
             convertRequestFailed = false;
         } else if (hasHardFailure) {
