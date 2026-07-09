@@ -1259,6 +1259,7 @@ async function confirmConvertModal() {
                 if (finalEvt && finalEvt.step === 'done') hasPackagingDone = true;
                 if (hasPackagingDone || hasConvertFailed) break;
                 if (detailEl) detailEl.textContent = '🎬 Backend single convert clip ' + clip.clip_number + '...';
+                keepConvertOverlayOpen = true;
             }
             // Cancel the original fetch since we got our result from history
             controller.abort();
@@ -1369,6 +1370,7 @@ async function confirmConvertModal() {
                 return msg.indexOf('Convert failed') !== -1 || evt.step === 'error';
             });
             if (hasPackagingDone) {
+                keepConvertOverlayOpen = true;
                 if (statusErrorEl) statusErrorEl.textContent = '📦 Stage 3/3 Packaging done. Ambil hasil...';
                 if (detailErrorEl) detailErrorEl.textContent = 'Log backend selesai. Mencoba ambil artifact convert...';
                 try {
@@ -1387,6 +1389,7 @@ async function confirmConvertModal() {
                 break;
             }
             if (hasHardFailure) {
+                keepConvertOverlayOpen = false;
                 break;
             }
             if (detailErrorEl) detailErrorEl.textContent = 'Backend masih proses convert. Tunggu log final...';
