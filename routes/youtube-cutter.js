@@ -2061,10 +2061,18 @@ router.post('/api/convert-ratio-all', async (req, res) => {
                 const dims = await getVideoDimensions(videoPath);
                 const duration = preparedClip.duration || clip.duration || 30;
                 const detectMode = req.body.detectMode || 'balanced';
+                const faceReady = isFaceDetectionReady();
+                const faceCropEnabled = req.body.smartCrop === true && faceReady;
                 logConvertStage(jobId, `⚡️ QSV encode attempt: smart-crop-merge`);
 
-                if (req.body.smartCrop === true && isFaceDetectionReady()) {
-                    await renderFaceCropLikeApp(videoPath, basePath, clipTmpDir, targetDim.w, targetDim.h, detectMode);
+                if (faceCropEnabled) {
+                    try {
+                        await renderFaceCropLikeApp(videoPath, basePath, clipTmpDir, targetDim.w, targetDim.h, detectMode);
+                    } catch (faceErr) {
+                        console.warn(`⚠️ smart-crop failed for clip ${idx + 1}, fallback to safe mode:`, faceErr.message);
+                        const fc = buildSafeModeFilter(targetDim.w, targetDim.h, dims.width, dims.height);
+                        await runCommandWithGpuFallback(['-y', '-i', videoPath, '-filter_complex', fc, '-map', '[out]', '-map', '0:a?', '-c:v', 'libx264', '-preset', 'fast', '-crf', '20', '-c:a', 'aac', '-b:a', '192k', basePath], tmpDir, 'all-safe-mode-fallback');
+                    }
                 } else if (false && req.body.smartCrop === true && isFaceDetectionReady()) {
                     const result = await computeFaceCrop(videoPath, 0, duration, clipTmpDir, targetDim.w, targetDim.h, dims.width, dims.height, detectMode);
                     let segments = Array.isArray(result?.segments) ? result.segments : ((result?.strategy) ? [{ start: 0, end: duration, ...result }] : [{ start: 0, end: duration, strategy: 'safe_mode', data: {} }]);
