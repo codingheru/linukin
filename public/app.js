@@ -1172,7 +1172,8 @@ async function confirmConvertModal() {
                 try {
                     var aResp = await fetch('/api/convert-artifact?' + new URLSearchParams({
                         jobId: currentJobId, mode: 'all', ratio: _cvtRatio,
-                        selectedIndices: selectedIndices.join(',')
+                        selectedIndices: selectedIndices.join(','),
+                        clipIndex: ''
                     }), { cache: 'no-store' });
                     if (aResp.ok) {
                         var aData = await aResp.json();
@@ -1188,7 +1189,6 @@ async function confirmConvertModal() {
                 }
             }
             allController.abort();
-            keepConvertOverlayOpen = false;
             if (!recoveredArtifact) {
                 console.error('[ALL CONVERT] Artifact never available after 10 min. Last error:', lastPollError);
                 throw new Error('Convert timeout — artifact tidak tersedia setelah 10 menit. ' + lastPollError);
@@ -1394,8 +1394,6 @@ async function confirmConvertModal() {
             }
             if (detailErrorEl) detailErrorEl.textContent = 'Backend masih proses convert. Tunggu log final...';
         }
-        keepConvertOverlayOpen = false;
-        var logHint = lastConvertEventTs ? ' Lihat log terminal di atas.' : '';
         if (recoveredArtifact && recoveredArtifact.zipBase64) {
             var recoveredBlob = b64ToBlob(recoveredArtifact.zipBase64, 'application/zip');
             var recoveredUrl = URL.createObjectURL(recoveredBlob);
