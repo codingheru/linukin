@@ -210,6 +210,16 @@ async function runCommandWithGpuFallback(args, cwd, label = 'encode') {
     }
 }
 
+async function runCommandWithEncodeFallback(args, cwd, label = 'encode') {
+    try {
+        return await runCommandWithGpuFallback(args, cwd, label);
+    } catch (e) {
+        console.log(`⚠️ encode failed (${label}), try safe fallback`);
+        const safeArgs = args.map((v, i, a) => (a[i - 1] === '-c:v' && v === 'libx264') ? 'mpeg4' : v);
+        return await runCommand(FFMPEG_PATH, safeArgs, cwd);
+    }
+}
+
 async function runWithConcurrency(items, workerCount, workerFn) {
     const queue = items.slice();
     const workers = Array.from({ length: Math.min(workerCount, queue.length) }, async () => {
@@ -1835,7 +1845,7 @@ async function renderFaceCropLikeApp(videoPath, outputPath, tmpDir, targetW, tar
     const cropRawPath = path.join(tmpDir, 'face_crop_like_app.mp4');
     try {
         await runCommand(PYTHON_CMD, [...PYTHON_ARGS, FACE_CROP_VIDEO_SCRIPT, videoPath, cropRawPath, String(targetW), String(targetH), '--detect-mode', detectMode], tmpDir);
-        await runCommandWithGpuFallback(['-y', '-i', cropRawPath, '-i', videoPath, '-map', '0:v:0', '-map', '1:a?', '-c:v', 'libx264', '-preset', 'fast', '-crf', '20', '-c:a', 'aac', '-b:a', '192k', outputPath], tmpDir, 'smart-crop-merge');
+        await runCommandWithEncodeFallback(['-y', '-i', cropRawPath, '-i', videoPath, '-map', '0:v:0', '-map', '1:a?', '-c:v', 'libx264', '-preset', 'fast', '-crf', '20', '-c:a', 'aac', '-b:a', '192k', outputPath], tmpDir, 'smart-crop-merge');
     } finally {
         try { fs.unlinkSync(cropRawPath); } catch { }
     }
@@ -2075,7 +2085,7 @@ router.post('/api/convert-ratio-all', async (req, res) => {
                         console.warn(`⚠️ smart-crop failed for clip ${idx + 1}, fallback to safe mode:`, faceErr.message);
                         const fc = buildSafeModeFilter(targetDim.w, targetDim.h, dims.width, dims.height);
                         try {
-                            await runCommandWithGpuFallback(['-y', '-i', videoPath, '-filter_complex', fc, '-map', '[out]', '-map', '0:a?', '-c:v', 'libx264', '-preset', 'fast', '-crf', '20', '-c:a', 'aac', '-b:a', '192k', basePath], tmpDir, 'all-safe-mode-fallback');
+                            await runCommandWithEncodeFallback(['-y', '-i', videoPath, '-filter_complex', fc, '-map', '[out]', '-map', '0:a?', '-c:v', 'libx264', '-preset', 'fast', '-crf', '20', '-c:a', 'aac', '-b:a', '192k', basePath], tmpDir, 'all-safe-mode-fallback');
                         } catch (safeErr) {
                             console.warn(`⚠️ safe-mode fallback failed for clip ${idx + 1}:`, safeErr.message);
                             return null;
@@ -2098,13 +2108,13 @@ router.post('/api/convert-ratio-all', async (req, res) => {
                             const fc = buildSafeModeFilter(targetDim.w, targetDim.h, dims.width, dims.height);
                             ffmpegArgs = ['-y', '-ss', String(seg.start), '-to', String(seg.end), '-i', videoPath, '-filter_complex', fc, '-map', '[out]', '-map', '0:a?', '-c:v', 'libx264', '-preset', 'fast', '-crf', '20', '-c:a', 'aac', '-b:a', '192k', segFile];
                         }
-                        await runCommandWithGpuFallback(ffmpegArgs, clipTmpDir, 'legacy-segment');
+                        await runCommandWithEncodeFallback(ffmpegArgs, clipTmpDir, 'legacy-segment');
                     }
                     if (segments.length > 1) { const cl = path.join(clipTmpDir, 'concat.txt'); fs.writeFileSync(cl, segFiles.map(f => `file '${f.replace(/\\/g, '/')}'`).join('\n')); await runCommand(FFMPEG_PATH, ['-y', '-f', 'concat', '-safe', '0', '-i', cl, '-c', 'copy', outputPath], clipTmpDir); }
                     else fs.copyFileSync(segFiles[0], outputPath);
                 } else {
                     const fc = buildSafeModeFilter(targetDim.w, targetDim.h, dims.width, dims.height);
-                    await runCommandWithGpuFallback(['-y', '-i', videoPath, '-filter_complex', fc, '-map', '[out]', '-map', '0:a?', '-c:v', 'libx264', '-preset', 'fast', '-crf', '20', '-c:a', 'aac', '-b:a', '192k', basePath], tmpDir, 'all-safe-mode');
+                    await runCommandWithEncodeFallback(['-y', '-i', videoPath, '-filter_complex', fc, '-map', '[out]', '-map', '0:a?', '-c:v', 'libx264', '-preset', 'fast', '-crf', '20', '-c:a', 'aac', '-b:a', '192k', basePath], tmpDir, 'all-safe-mode');
                 }
 
                 logConvertStage(jobId, `✅ [All] Smart crop ready ${idx + 1}/${sourceResults.length} (clip ${clip.clip_number})`);
