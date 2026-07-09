@@ -1267,18 +1267,14 @@ async function confirmConvertModal() {
                 if (!hResp.ok) continue;
                 var hData = await hResp.json();
                 var hEvents = Array.isArray(hData && hData.events) ? hData.events : [];
-                var finalEvt = hEvents.slice().reverse().find(function (evt) {
-                    return evt && (evt.step === 'done' || evt.step === 'error' || String(evt.message || '').indexOf('done') !== -1 || String(evt.message || '').indexOf('failed') !== -1);
+                var terminalEvt = hEvents.slice().reverse().find(function (evt) {
+                    return evt && (evt.step === 'done' || evt.step === 'error' || /done|failed|packaging done/i.test(String(evt.message || '')));
                 });
-                hasPackagingDone = hEvents.some(function(evt) {
-                    var msg = String(evt && evt.message || '');
-                    return msg.indexOf('Stage 3/3 Packaging done') !== -1 || msg.indexOf('Stage 2/3 Finalize done') !== -1 || msg.indexOf('Stage 1/3 Prepare Smart Crop done') !== -1 || msg.indexOf('Convert selesai') !== -1 || msg.indexOf('[All] Finalize done') !== -1 || msg.indexOf('[All] Stage 3/3 Packaging done') !== -1;
-                });
+                hasPackagingDone = !!terminalEvt && (terminalEvt.step === 'done' || /done/i.test(String(terminalEvt.message || '')));
                 hasConvertFailed = hEvents.some(function(evt) {
                     var msg = String(evt && evt.message || '');
                     return msg.indexOf('Convert failed') !== -1 || evt.step === 'error';
                 });
-                if (finalEvt && finalEvt.step === 'done') hasPackagingDone = true;
                 if (hasPackagingDone || hasConvertFailed) break;
                 if (detailEl) detailEl.textContent = '🎬 Backend single convert clip ' + clip.clip_number + '...';
                 keepConvertOverlayOpen = true;
@@ -1470,6 +1466,7 @@ async function confirmConvertModal() {
             if (statusErrorEl) statusErrorEl.textContent = '✅ Selesai';
             if (detailErrorEl) detailErrorEl.textContent = 'Backend sudah selesai. Coba ambil hasil sekali lagi...';
             if (actionsEl) actionsEl.style.display = 'flex';
+            if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
             try {
                 var fallbackRecovered = await tryRecoverConvertArtifact({
                     jobId: currentJobId,
@@ -1504,7 +1501,8 @@ async function confirmConvertModal() {
                         clipIndex: _cvtClipIndex
                     };
                     setConvertGlobalHashtagsRaw('');
-                    document.getElementById('convertCompleteInfo').textContent = (smartCrop ? ('🧠 Smart Crop · ' + detectMode) : '📐 Safe Mode') + (autoCaption ? (' + 🎙 Caption(' + captionProvider + ')') : '') + ' · ' + _cvtRatio;
+                    var fallbackSubtitle = document.getElementById('convertCompleteSubtitle');
+                    if (fallbackSubtitle) fallbackSubtitle.textContent = (smartCrop ? ('🧠 Smart Crop · ' + detectMode) : '📐 Safe Mode') + (autoCaption ? (' + 🎙 Caption(' + captionProvider + ')') : '') + ' · ' + _cvtRatio;
                     var fallbackLink = document.getElementById('convertDownloadLink');
                     fallbackLink.style.display = 'flex';
                     fallbackLink.href = _cvtLastVideoUrl;
