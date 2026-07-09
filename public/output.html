@@ -91,6 +91,8 @@
 
   <script>
     let outputFiles = [];
+    const OUTPUT_DRAFT_KEY = 'table_share_output_draft';
+    const REPLIZ_DRAFT_KEY = 'repliz_table_share_draft';
     async function loadOutputFiles() {
       const list = document.getElementById('outputFileList');
       const count = document.getElementById('outputSelectedCount');
@@ -178,11 +180,43 @@
     }
 
     function sendSelectedOutputsToRepliz() {
-      alert('Route Repliz batch belum disambung');
+      const files = selectedOutputFiles();
+      if (!files.length) return alert('Pilih output dulu');
+      const payload = files.map((file, index) => ({
+        link: file.url || '/output/' + encodeURIComponent(file.filename),
+        mediaUrl: file.url || '/output/' + encodeURIComponent(file.filename),
+        title: file.filename,
+        caption: '',
+        hashtags: '',
+        order: index + 1
+      }));
+      localStorage.setItem('repliz_table_share_draft', JSON.stringify({
+        source: 'output-page',
+        items: payload,
+        savedAt: new Date().toISOString()
+      }));
+      window.location.href = 'index.html#repliz';
     }
 
     function saveSelectedOutputsToTable() {
-      alert('Route simpan ke tabel belum disambung');
+      const files = selectedOutputFiles();
+      if (!files.length) return alert('Pilih output dulu');
+      const payload = files.map((file, index) => ({
+        link: file.url || '/output/' + encodeURIComponent(file.filename),
+        filename: file.filename,
+        title: file.filename,
+        caption: '',
+        hashtags: '',
+        status: 'draft',
+        source: 'output-page',
+        order: index + 1
+      }));
+      localStorage.setItem('table_share_output_draft', JSON.stringify({
+        source: 'output-page',
+        items: payload,
+        savedAt: new Date().toISOString()
+      }));
+      window.location.href = 'tabel-share-video.html';
     }
 
     loadOutputFiles();
