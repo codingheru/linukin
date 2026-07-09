@@ -2092,7 +2092,12 @@ router.post('/api/convert-ratio-all', async (req, res) => {
                                 fs.copyFileSync(videoPath, basePath);
                             } catch (copyErr) {
                                 console.warn(`⚠️ raw copy fallback failed for clip ${idx + 1}:`, copyErr.message);
-                                return null;
+                                try {
+                                    await runCommand(FFMPEG_PATH, ['-y', '-i', videoPath, '-c', 'copy', basePath], clipTmpDir);
+                                } catch (copyFallbackErr) {
+                                    console.warn(`⚠️ ffmpeg copy fallback failed for clip ${idx + 1}:`, copyFallbackErr.message);
+                                    return null;
+                                }
                             }
                         }
                     }
