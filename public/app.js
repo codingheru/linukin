@@ -1108,6 +1108,13 @@ async function confirmConvertModal() {
         };
     }
     var lastConvertEventTs = 0;
+    var lastConvertAppliedKey = '';
+    function getConvertMessageText(evt) {
+        return String(evt && evt.message || evt && evt.text || '').trim();
+    }
+    function isConvertTerminalMessage(msg) {
+        return /(^|\b)(Stage 3\/3 Packaging done|Convert failed|✅ \[All\] Stage 3\/3 Packaging done|✅ \[Single\] Stage 3\/3 Packaging done|\[All\] Convert failed|\[Single\] Convert failed|🎉 Selesai!|✅ Convert selesai)(\b|$)/i.test(String(msg || ''));
+    }
     async function pollConvertStageHistory() {
         if (!currentJobId) return;
         try {
@@ -1115,11 +1122,19 @@ async function confirmConvertModal() {
             if (!resp.ok) return;
             var data = await resp.json();
             var events = Array.isArray(data && data.events) ? data.events : [];
+            var terminalEvent = null;
             events.forEach(function (evt) {
-                applyConvertStageEvent(evt);
+                var msg = getConvertMessageText(evt);
+                var key = String(evt && evt._ts || '') + '|' + msg;
+                if (key !== lastConvertAppliedKey) {
+                    applyConvertStageEvent(evt);
+                    lastConvertAppliedKey = key;
+                }
+                if (isConvertTerminalMessage(msg) || (evt && evt.step === 'done') || (evt && evt.step === 'error')) terminalEvent = evt;
                 var evtTs = Number(evt && evt._ts || 0);
                 if (evtTs > lastConvertEventTs) lastConvertEventTs = evtTs;
             });
+            return terminalEvent;
         } catch (err) {
             console.error('Convert history polling error:', err);
         }
@@ -1236,7 +1251,7 @@ async function confirmConvertModal() {
             var clipIdx = _cvtClipIndex;
             var clip = allResults[clipIdx];
             if (statusEl) statusEl.textContent = '🎬 Single convert clip ' + clip.clip_number;
-            if (detailEl) detailEl.textContent = (smartCrop ? 'Stage 1/3 Prepare Smart Crop' : 'Safe Mode') + (autoCaption ? (' · Stage 2/3 Finalize + Caption(' + captionProvider + ')') : '');
+            if (detailEl) detailEl.textContent = '🎬 [Single] Convert request received (' + _cvtRatio + ')';
 
             // Fire the request — don't await full response (may timeout through proxy)
             var fetchDone = false;
@@ -1268,9 +1283,9 @@ async function confirmConvertModal() {
                 var hData = await hResp.json();
                 var hEvents = Array.isArray(hData && hData.events) ? hData.events : [];
                 var terminalEvt = hEvents.slice().reverse().find(function (evt) {
-                    return evt && (evt.step === 'done' || evt.step === 'error' || /done|failed|packaging done/i.test(String(evt.message || '')));
+                    return evt && (evt.step === 'done' || evt.step === 'error' || isConvertTerminalMessage(getConvertMessageText(evt)));
                 });
-                hasPackagingDone = !!terminalEvt && (terminalEvt.step === 'done' || /done/i.test(String(terminalEvt.message || '')));
+                hasPackagingDone = !!terminalEvt && (terminalEvt.step === 'done' || isConvertTerminalMessage(getConvertMessageText(terminalEvt)));
                 hasConvertFailed = hEvents.some(function(evt) {
                     var msg = String(evt && evt.message || '');
                     return msg.indexOf('Convert failed') !== -1 || evt.step === 'error';
@@ -1378,20 +1393,19 @@ async function confirmConvertModal() {
             var historyData = await historyResp.json();
             var historyEvents = Array.isArray(historyData && historyData.events) ? historyData.events : [];
             var finalEvt = historyEvents.slice().reverse().find(function (evt) {
-                return evt && (evt.step === 'done' || evt.step === 'error' || String(evt.message || '').indexOf('done') !== -1 || String(evt.message || '').indexOf('failed') !== -1);
+                return evt && (evt.step === 'done' || evt.step === 'error' || isConvertTerminalMessage(getConvertMessageText(evt)));
             });
             var hasPackagingDone = historyEvents.some(function (evt) {
-                var msg = String(evt && evt.message || '');
-                return msg.indexOf('3/3 Packaging done') !== -1 || msg.indexOf('Stage 3/3 Packaging') !== -1 || msg.indexOf('Convert selesai') !== -1;
+                return isConvertTerminalMessage(getConvertMessageText(evt));
             });
-            if (finalEvt && finalEvt.step === 'done') hasPackagingDone = true;
+            if (finalEvt && (finalEvt.step === 'done' || isConvertTerminalMessage(getConvertMessageText(finalEvt)))) hasPackagingDone = true;
             hasHardFailure = historyEvents.some(function (evt) {
                 var msg = String(evt && evt.message || '');
                 return msg.indexOf('Convert failed') !== -1 || evt.step === 'error';
             });
             if (hasPackagingDone) {
                 keepConvertOverlayOpen = true;
-                if (statusErrorEl) statusErrorEl.textContent = '📦 Stage 3/3 Packaging done. Ambil hasil...';
+                if (statusErrorEl) statusErrorEl.textContent = '📦 ' + getConvertMessageText(finalEvt || historyEvents[historyEvents.length - 1] || { message: 'Stage 3/3 Packaging done' });
                 if (detailErrorEl) detailErrorEl.textContent = 'Log backend selesai. Mencoba ambil artifact convert...';
                 try {
                     recoveredArtifact = await tryRecoverConvertArtifact({
