@@ -73,7 +73,13 @@ jobs:
         run: |
           export TABLE_SHARE_APPS_SCRIPT_URL="https://example.com/dummy"
           export PORT=3001
-          # Start server, wait 3s, check if still running
+          # Start server, wait 3s, check if still running using ps
           node server.js &
           sleep 3
-          pgrep -f "node server.js" && echo "Server alive" || (echo "Server dead - exit code: $?" && exit 1)
+          if ps aux | grep -v grep | grep "node server.js" > /dev/null; then
+            echo "✅ Server is alive"
+            pkill -f "node server.js" || true
+          else
+            echo "❌ Server crashed"
+            exit 1
+          fi
