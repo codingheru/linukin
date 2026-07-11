@@ -71,6 +71,9 @@ jobs:
 
       - name: Smoke test — server starts without crash
         run: |
+          # Set dummy env so video-share route doesn't throw on startup
+          export TABLE_SHARE_APPS_SCRIPT_URL="https://example.com/dummy"
+          export PORT=3001
           # Start server with timeout, capture any immediate crash output
           timeout 15 node server.js &
           SERVER_PID=$!
