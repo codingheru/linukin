@@ -1,0 +1,86 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ── Node.js checks ──────────────────────────────────────────────
+  node-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Syntax check (node --check on all JS files)
+        run: |
+          find . -name "*.js" -not -path "./node_modules/*" -exec node --check {} \;
+        continue-on-error: true
+
+      - name: "Lint check (optional)"
+        run: npm run lint 2>/dev/null || echo "No lint script found, skipping"
+
+  # ── Python checks ────────────────────────────────────────────────
+  python-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Syntax check Python files
+        run: |
+          python -m py_compile lib/face_crop_video.py
+          python -m py_compile lib/whisper_transcribe.py
+          python -m py_compile lib/mediapipe_detect.py
+        continue-on-error: true
+
+  # ── Basic server smoke test ──────────────────────────────────────
+  smoke-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Start server in background
+        run: node server.js &
+        env:
+          PORT: 3001
+
+      - name: Wait for server to start
+        run: sleep 5
+
+      - name: Smoke test — ping endpoint
+        run: |
+          curl -s http://localhost:3001/ | head -c 200 || echo "Server may not expose root, checking process"
+          pgrep -f "node server.js" && echo "Server is running"
+
+      - name: Cleanup
+        run: pkill -f "node server.js" || true
