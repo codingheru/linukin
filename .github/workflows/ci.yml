@@ -74,11 +74,11 @@ jobs:
           # Set dummy env so video-share route doesn't throw on startup
           export TABLE_SHARE_APPS_SCRIPT_URL="https://example.com/dummy"
           export PORT=3001
-          # Start server with timeout, capture any immediate crash output
-          timeout 15 node server.js &
+          # Start server, let it run for a bit, check if still alive
+          node server.js &
           SERVER_PID=$!
           sleep 8
-          # Check if process is still alive
+          # Check if process is still alive (before timeout of 15s triggers)
           if kill -0 $SERVER_PID 2>/dev/null; then
             echo "✅ Server started and stayed alive (PID $SERVER_PID)"
             kill $SERVER_PID 2>/dev/null
