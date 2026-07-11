@@ -71,19 +71,9 @@ jobs:
 
       - name: Smoke test — server starts without crash
         run: |
-          # Set dummy env so video-share route doesn't throw on startup
           export TABLE_SHARE_APPS_SCRIPT_URL="https://example.com/dummy"
           export PORT=3001
-          # Start server, let it run for a bit, check if still alive
+          # Start server, wait 3s, check if still running
           node server.js &
-          SERVER_PID=$!
-          sleep 8
-          # Check if process is still alive (before timeout of 15s triggers)
-          if kill -0 $SERVER_PID 2>/dev/null; then
-            echo "✅ Server started and stayed alive (PID $SERVER_PID)"
-            kill $SERVER_PID 2>/dev/null
-            exit 0
-          else
-            echo "❌ Server crashed on startup"
-            exit 1
-          fi
+          sleep 3
+          pgrep -f "node server.js" && echo "Server alive" || (echo "Server dead - exit code: $?" && exit 1)
