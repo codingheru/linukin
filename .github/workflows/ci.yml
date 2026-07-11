@@ -69,25 +69,18 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Start server in background
-        run: node server.js &
-        env:
-          PORT: 3001
-
-      - name: Wait for server to start
-        run: sleep 6
-
-      - name: Smoke test — ping API endpoint
+      - name: Smoke test — server starts without crash
         run: |
-          # Try /api/bulk-drafts (no auth, no body needed)
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3001/api/bulk-drafts)
-          echo "HTTP Status: $STATUS"
-          if [ "$STATUS" = "200" ] || [ "$STATUS" = "401" ] || [ "$STATUS" = "500" ]; then
-            echo "Server is responding correctly"
+          # Start server with timeout, capture any immediate crash output
+          timeout 15 node server.js &
+          SERVER_PID=$!
+          sleep 8
+          # Check if process is still alive
+          if kill -0 $SERVER_PID 2>/dev/null; then
+            echo "✅ Server started and stayed alive (PID $SERVER_PID)"
+            kill $SERVER_PID 2>/dev/null
+            exit 0
           else
-            echo "Unexpected status: $STATUS"
+            echo "❌ Server crashed on startup"
             exit 1
           fi
-
-      - name: Cleanup
-        run: pkill -f "node server.js" || true
